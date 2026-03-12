@@ -1,0 +1,21 @@
+project_id = "tgjcwduahytknwjhmqty"
+
+[functions.legal-chat]
+verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false
+
+[functions.bhashini-tts]
+verify_jwt = false
+
+[functions.elevenlabs-tts]
+verify_jwt = false
+
+[functions.voice-to-text]
+verify_jwt = false
+[functions.murf-tts]
+verify_jwt = false
+
+[functions.courtroom-ai]
+verify_jwt = false
