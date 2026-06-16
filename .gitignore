@@ -9,8 +9,17 @@ lerna-debug.log*
 
 node_modules
 dist
+dist[0-9]*/
 dist-ssr
 *.local
+
+# Backend deploy bundles
+legalcare-backend-*.zip
+legal-rights-docs.zip
+legal-rights-docs/
+
+# Local agent config
+.claude/
 
 # Editor directories and files
 .vscode/*
