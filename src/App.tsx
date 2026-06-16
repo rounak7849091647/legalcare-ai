@@ -28,6 +28,7 @@ import ConnectExpert from "./pages/tax/ConnectExpert";
 import Discussion from "./pages/Discussion";
 import Community from "./pages/Community";
 import Emulator from "./pages/Emulator";
+import AudioUnlocker from "./components/AudioUnlocker";
 
 const queryClient = new QueryClient();
 
@@ -39,7 +40,8 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-          <BrowserRouter>
+            <AudioUnlocker />
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/emulator" element={<Emulator />} />

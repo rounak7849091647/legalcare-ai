@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { invokeFunction } from '@/lib/api';
 import { isIOSDevice } from '@/lib/device/isIOSDevice';
-import { unlockAudioContext } from '@/hooks/useMobileAudio';
+import { unlockAudioContext, getAudioContext } from '@/hooks/useMobileAudio';
+import { WavRecorder } from '@/lib/audio/wavRecorder';
 
 export type SttErrorCode =
   | 'stt_key_missing'
@@ -43,18 +44,23 @@ export const useWhisperRecognition = (): WhisperRecognitionHook => {
   const [selectedMimeType, setSelectedMimeType] = useState<string | null>(null);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const wavRecorderRef = useRef<WavRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
   const isSupported = typeof window !== 'undefined' && 
     typeof navigator !== 'undefined' && 
-    !!navigator.mediaDevices?.getUserMedia &&
-    typeof MediaRecorder !== 'undefined';
+    !!navigator.mediaDevices?.getUserMedia;
 
   const cleanupStream = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+    // Cleanup wav recorder if exists
+    if (wavRecorderRef.current) {
+      // It handles its own cleanup
+      wavRecorderRef.current = null;
     }
   }, []);
 
@@ -78,88 +84,64 @@ export const useWhisperRecognition = (): WhisperRecognitionHook => {
     setLastFailureStage(null);
     audioChunksRef.current = [];
 
-    const isIOS = isIOSDevice();
-    let stream: MediaStream | null = null;
-
+    // FORCE WAV RECORDER FOR EVERYONE (Pro Mode)
+    // This ensures consistent audio format and better compatibility with OpenAI Whisper
     try {
-      if (typeof MediaRecorder === 'undefined') {
-        throw new Error('MediaRecorderUnsupported');
-      }
-
-      // CRITICAL: getUserMedia MUST be the FIRST awaited browser permission call
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true }
-        });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      }
-
-      streamRef.current = stream;
-      unlockAudioContext().catch(() => {});
-
-      const mimeTypes = isIOS
-        ? ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/wav']
-        : ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
-
-      const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type));
-      setSelectedMimeType(mimeType || 'default');
-      console.log('Selected MIME type:', mimeType || 'default (browser choice)');
-
-      const mediaRecorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onerror = () => {
-        setError('Recording error');
-        setLastFailureStage('capture');
-        setIsRecording(false);
-      };
-
-      mediaRecorder.start(500);
+      // Use Shared Audio Context if available to help with AEC
+      const sharedContext = getAudioContext();
+      const recorder = new WavRecorder(sharedContext || undefined);
+      await recorder.start();
+      wavRecorderRef.current = recorder;
       setIsRecording(true);
-      
+      setSelectedMimeType('audio/wav');
+      console.log('Started WAV recording (Universal Mode)');
+      return;
     } catch (err) {
-      console.error('Recording start failed:', err);
+      console.error('WAV recording failed:', err);
+      setError('Failed to start microphone');
       setLastFailureStage('capture');
-      setLastErrorCode('capture_failed');
-
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      
-      let msg = 'Unable to start microphone recording';
-      if (err instanceof Error) {
-        if (err.message === 'MediaRecorderUnsupported') {
-          msg = 'Audio recording is not supported on this iOS Safari version';
-        } else if (err.name === 'NotFoundError') {
-          msg = 'No microphone found';
-        } else if (err.name === 'NotAllowedError' && isIOS) {
-          msg = 'iOS blocked microphone access. Enable Microphone for Safari and try again.';
-        } else if (err.name === 'NotAllowedError') {
-          msg = 'Microphone access denied. Allow microphone in browser settings.';
-        } else if (err.name === 'NotReadableError') {
-          msg = 'Microphone is busy in another app. Close other apps and retry.';
-        } else if (err.name === 'OverconstrainedError' || err.name === 'TypeError') {
-          msg = 'Microphone constraints unsupported on this device. Please retry.';
-        }
-      }
-
-      setError(msg);
-      throw new Error(msg);
+      throw err;
     }
   }, [isSupported, cleanupStream]);
 
   const stopRecording = useCallback(async (): Promise<{ text: string; language: string }> => {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
+      
+      // Handle WAV Recorder Stop
+      if (wavRecorderRef.current && isRecording) {
+        setIsRecording(false);
+        setIsProcessing(true);
+        try {
+          const wavBlob = await wavRecorderRef.current.stop();
+          wavRecorderRef.current = null;
+          
+          // CRITICAL: Physically stop the microphone tracks to ensure it goes dead
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => {
+              track.enabled = false; // Mute it
+              track.stop(); // Kill it
+            });
+            streamRef.current = null;
+          }
+          
+          if (wavBlob.size < 500) {
+             setIsProcessing(false);
+             setError('Recording too short');
+             resolve({ text: '', language: 'en-IN' });
+             return;
+          }
+
+          // Process the blob
+          await processAudioBlob(wavBlob, 'audio/wav', resolve);
+        } catch (err) {
+          console.error('WAV Stop failed:', err);
+          setIsProcessing(false);
+          resolve({ text: '', language: 'en-IN' });
+        }
+        return;
+      }
+
+
       if (!mediaRecorderRef.current || !isRecording) {
         resolve({ text: '', language: 'en-IN' });
         return;
@@ -187,64 +169,7 @@ export const useWhisperRecognition = (): WhisperRecognitionHook => {
           console.log('Final audio MIME type:', mimeType);
 
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          
-          // Lower threshold: 500 bytes to avoid dropping very short iOS commands
-          if (audioBlob.size < 500) {
-            setIsProcessing(false);
-            setError('Recording too short. Please try again.');
-            setLastFailureStage('capture');
-            resolve({ text: '', language: 'en-IN' });
-            return;
-          }
-
-          // Convert to base64
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          let binary = '';
-          const chunkSize = 8192;
-          for (let i = 0; i < uint8Array.length; i += chunkSize) {
-            const chunk = uint8Array.slice(i, i + chunkSize);
-            binary += String.fromCharCode.apply(null, Array.from(chunk));
-          }
-          const base64Audio = btoa(binary);
-
-          setLastFailureStage(null);
-          const { data, error: fnError } = await invokeFunction('voice-to-text', {
-            body: { audio: base64Audio, mimeType }
-          });
-
-          if (fnError) {
-            console.error('Function invocation error:', fnError);
-            setError('Voice service unreachable. Please type your message.');
-            setLastErrorCode('stt_provider_unavailable');
-            setLastFailureStage('upload');
-            resolve({ text: '', language: 'en-IN' });
-            return;
-          }
-
-          // Parse structured response
-          if (data?.ok === false || data?.errorCode) {
-            const code = data.errorCode as SttErrorCode;
-            setLastErrorCode(code);
-            setLastFailureStage('transcription');
-            setError(data.userMessage || 'Transcription failed');
-            resolve({ text: '', language: 'en-IN' });
-            return;
-          }
-
-          if (!data?.text) {
-            setError('No speech detected. Please try again.');
-            setLastFailureStage('transcription');
-            resolve({ text: '', language: 'en-IN' });
-            return;
-          }
-
-          const lang = data.detectedLanguage || 'en-IN';
-          setTranscript(data.text);
-          setDetectedLanguage(lang);
-          setLastErrorCode(null);
-          setLastFailureStage(null);
-          resolve({ text: data.text, language: lang });
+          await processAudioBlob(audioBlob, mimeType, resolve);
 
         } catch (err) {
           console.error('Processing failed:', err);
@@ -261,6 +186,67 @@ export const useWhisperRecognition = (): WhisperRecognitionHook => {
       mediaRecorder.stop();
     });
   }, [isRecording, cleanupStream]);
+
+  // Helper to process audio blob (shared between WAV and MediaRecorder)
+  const processAudioBlob = async (audioBlob: Blob, mimeType: string, resolve: (val: any) => void) => {
+    // Lower threshold: 500 bytes to avoid dropping very short iOS commands
+    if (audioBlob.size < 500) {
+      setIsProcessing(false);
+      setError('Recording too short. Please try again.');
+      setLastFailureStage('capture');
+      resolve({ text: '', language: 'en-IN' });
+      return;
+    }
+
+    // Convert to base64
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.slice(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const base64Audio = btoa(binary);
+
+    setLastFailureStage(null);
+    const { data, error: fnError } = await invokeFunction('voice-to-text', {
+      body: { audio: base64Audio, mimeType }
+    });
+
+    if (fnError) {
+      console.error('Function invocation error:', fnError);
+      setError('Voice service unreachable. Please type your message.');
+      setLastErrorCode('stt_provider_unavailable');
+      setLastFailureStage('upload');
+      resolve({ text: '', language: 'en-IN' });
+      return;
+    }
+
+    // Parse structured response
+    if (data?.ok === false || data?.errorCode) {
+      const code = data.errorCode as SttErrorCode;
+      setLastErrorCode(code);
+      setLastFailureStage('transcription');
+      setError(data.userMessage || 'Transcription failed');
+      resolve({ text: '', language: 'en-IN' });
+      return;
+    }
+
+    if (!data?.text) {
+      setError('No speech detected. Please try again.');
+      setLastFailureStage('transcription');
+      resolve({ text: '', language: 'en-IN' });
+      return;
+    }
+
+    const lang = data.detectedLanguage || 'en-IN';
+    setTranscript(data.text);
+    setDetectedLanguage(lang);
+    setLastErrorCode(null);
+    setLastFailureStage(null);
+    resolve({ text: data.text, language: lang });
+  };
 
   const resetTranscript = useCallback(() => {
     setTranscript('');

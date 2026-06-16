@@ -52,10 +52,10 @@ export const cleanTextForVoice = (text: string): string => {
     .replace(/\*{2,}/g, '')
     .replace(/_{2,}/g, '')
     
-    // Remove emojis from voice (they don't speak well)
-    .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
-    .replace(/[\u{2600}-\u{26FF}]/gu, '')
-    .replace(/[\u{2700}-\u{27BF}]/gu, '')
+    // Remove emojis + pictographs so the TTS voice doesn't read "smiling face", "scales", etc.
+    // Range coverage mirrors server-side stripEmojis() in server.js — keep them in sync.
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B00}-\u{2BFF}\u{1F000}-\u{1F2FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[\u{FE0F}\u{200D}]/gu, '') // variation selector + zero-width joiner
     
     // Clean up multiple newlines
     .replace(/\n{3,}/g, '\n\n')

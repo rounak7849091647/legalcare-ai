@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/hooks/useLegalChat';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -20,7 +21,7 @@ const ChatMessages = ({ messages, isLoading }: ChatMessagesProps) => {
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4">
+    <div className="w-full mx-auto">
       <div className="space-y-4 py-4">
         {messages.map((message) => (
           <div
@@ -32,32 +33,42 @@ const ChatMessages = ({ messages, isLoading }: ChatMessagesProps) => {
           >
             <div
               className={cn(
-                "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
+                "w-full font-sans text-base py-2",
                 message.role === 'user'
-                  ? 'bg-white text-black'
-                  : 'bg-white/10 text-foreground border border-white/20'
+                  ? 'text-right font-bold text-muted-foreground'
+                  : 'text-left text-foreground'
               )}
             >
               {message.role === 'assistant' ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none">
+                <div className="max-w-none w-full">
                   <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     components={{
-                      h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
-                      p: ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                      li: ({ children }) => <li className="text-sm">{children}</li>,
-                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      code: ({ children }) => <code className="bg-background/50 px-1 py-0.5 rounded text-xs">{children}</code>,
+                      h1: ({ children }) => <h1 className="text-3xl font-extrabold text-foreground mt-2 mb-6 uppercase tracking-tight">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-xl font-bold text-foreground mt-8 mb-4">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-lg font-bold text-foreground mt-6 mb-3">{children}</h3>,
+                      p: ({ children }) => <p className="mb-4 leading-relaxed text-foreground">{children}</p>,
+                      hr: () => <hr className="border-t border-border my-6" />,
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-6">
+                          <table className="w-full border-collapse border border-border text-left text-sm">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-muted">{children}</thead>,
+                      th: ({ children }) => <th className="border border-border px-4 py-3 font-bold text-foreground">{children}</th>,
+                      td: ({ children }) => <td className="border border-border px-4 py-3 text-foreground">{children}</td>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-4 space-y-2 text-foreground">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-4 space-y-2 text-foreground">{children}</ol>,
+                      li: ({ children }) => <li className="text-sm text-foreground">{children}</li>,
+                      strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
+                      code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs text-foreground">{children}</code>,
                     }}
                   >
                     {message.content}
                   </ReactMarkdown>
                 </div>
               ) : (
-                <p className="leading-relaxed">{message.content}</p>
+                <p className="leading-relaxed inline-block">{message.content}</p>
               )}
             </div>
           </div>
@@ -65,11 +76,11 @@ const ChatMessages = ({ messages, isLoading }: ChatMessagesProps) => {
         
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white/10 border border-white/20 rounded-2xl px-4 py-3">
+            <div className="bg-muted border border-border rounded-2xl px-4 py-3">
               <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>

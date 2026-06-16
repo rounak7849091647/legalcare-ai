@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['IBM Plex Sans', 'sans-serif'],
         serif: ['Playfair Display', 'serif'],
       },
       colors: {
@@ -66,6 +66,12 @@ export default {
           inner: "hsl(var(--orb-inner))",
         },
         dim: "hsl(var(--text-dim))",
+        courtroom: {
+          dark:   "#08080f",
+          panel:  "#0f0f1a",
+          border: "#1c1c32",
+          gold:   "#c9a84c",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -89,12 +95,29 @@ export default {
           from: { opacity: "0", transform: "scale(0.95)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
+        "wave-bar": {
+          "0%, 100%": { transform: "scaleY(0.4)" },
+          "50%":      { transform: "scaleY(1)" },
+        },
+        "gavel-hit": {
+          "0%":   { transform: "rotate(0deg)" },
+          "30%":  { transform: "rotate(-30deg)" },
+          "60%":  { transform: "rotate(10deg)" },
+          "100%": { transform: "rotate(0deg)" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.5s ease-out forwards",
-        "scale-in": "scale-in 0.3s ease-out forwards",
+        "scale-in":  "scale-in 0.3s ease-out forwards",
+        "wave-bar":  "wave-bar 0.8s ease-in-out infinite",
+        "gavel-hit": "gavel-hit 0.6s ease-in-out",
+        "slide-up":  "slide-up 0.3s ease-out forwards",
       },
     },
   },

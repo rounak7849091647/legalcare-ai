@@ -1,334 +1,505 @@
-import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Gavel, UserX, UserCheck, Send, MessageSquare } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { useState, useRef, useEffect } from 'react'
+import {
+  Gavel, Lightbulb, ChevronRight,
+  Loader2, Volume2, VolumeX, Scale,
+  Mic, MicOff, Send, X,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
+import { invokeFunction } from '@/lib/api'
+import { useLanguage } from '@/contexts/LanguageContext'
+import { useAudio } from '@/hooks/useAudio'
+import CourtroomVideoPanel from './CourtroomVideoPanel'
+import CourtroomTranscript, { type TranscriptEntry } from './CourtroomTranscript'
+import CourtroomEvidenceBoard from './CourtroomEvidenceBoard'
+import CourtroomFeedbackReport from './CourtroomFeedbackReport'
 
-interface Argument {
-  speaker: string;
-  phase: string;
-  content: string;
-  isUser?: boolean;
+type Phase = 'opening' | 'examination' | 'closing' | 'verdict'
+
+const PHASES: Phase[] = ['opening', 'examination', 'closing', 'verdict']
+const PHASE_LABELS: Record<Phase, string> = {
+  opening:     'Opening',
+  examination: 'Examination',
+  closing:     'Closing',
+  verdict:     'Verdict',
 }
 
 interface CourtroomSimulationProps {
-  caseAnalysis: any;
-  userRole: 'accused' | 'complainant';
-  onComplete: (args: Argument[]) => void;
-  language?: string;
+  caseAnalysis: any
+  userRole: 'accused' | 'complainant'
+  onComplete: (args: any[]) => void
+  language?: string
 }
 
-// The structured hearing flow. 'user' type means the user must type their argument.
-// 'ai' type means the AI generates it automatically.
-type PhaseType = 'ai' | 'user';
+export default function CourtroomSimulation({
+  caseAnalysis, userRole, onComplete, language,
+}: CourtroomSimulationProps) {
+  const { currentLanguage } = useLanguage()
+  const lang = language || currentLanguage?.code || 'en-IN'
 
-interface Phase {
-  key: string;
-  label: string;
-  type: PhaseType;
-  speaker: string; // display speaker (for AI phases)
-  description: string; // prompt shown to user on their turn
-}
+  const {
+    isListening, liveTranscript, isTTSSpeaking, ttsRole,
+    audioEnabled, micAvailable, setAudioEnabled,
+    speak, stopSpeaking, startListening, stopListening,
+  } = useAudio()
 
-const getPhases = (userRole: 'accused' | 'complainant'): Phase[] => {
-  const opponentLabel = userRole === 'complainant' ? 'Defense Lawyer' : 'Prosecution Lawyer';
-  const userLabel = userRole === 'complainant' ? 'Prosecution' : 'Defense';
+  const [sessionStarted, setSessionStarted] = useState(false)
+  const [phase, setPhase]                   = useState<Phase>('opening')
+  const [transcript, setTranscript]         = useState<TranscriptEntry[]>([])
+  const [isLoading, setIsLoading]           = useState(false)
+  const [lastJudge, setLastJudge]           = useState('')
+  const [lastOpponent, setLastOpponent]     = useState('')
+  const [hint, setHint]                     = useState<string | null>(null)
+  const [showHint, setShowHint]             = useState(false)
+  const [verdictData, setVerdictData]       = useState<any | null>(null)
+  const [isConcluded, setIsConcluded]       = useState(false)
+  const [isSpeaking, setIsSpeaking]         = useState({ judge: false, opponent: false })
+  const [activeTab, setActiveTab]           = useState<'transcript' | 'evidence'>('transcript')
+  const [showTextInput, setShowTextInput]   = useState(false)
+  const [textStatement, setTextStatement]   = useState('')
 
-  return [
-    { key: 'case_introduction', label: 'Case Introduction', type: 'ai', speaker: 'Judge', description: '' },
-    { key: userRole === 'complainant' ? 'opening_prosecution' : 'opening_defense', label: `Opening Statement - You (${userLabel})`, type: 'user', speaker: 'You', description: 'Present your opening statement. Outline your case, key claims, and what you aim to prove.' },
-    { key: userRole === 'complainant' ? 'opening_defense' : 'opening_prosecution', label: `Opening Statement - ${opponentLabel}`, type: 'ai', speaker: opponentLabel, description: '' },
-    { key: 'evidence_presentation', label: 'Evidence Review', type: 'ai', speaker: 'Judge', description: '' },
-    { key: userRole === 'complainant' ? 'prosecution_argument' : 'defense_argument', label: `Your Arguments (${userLabel})`, type: 'user', speaker: 'You', description: 'Present your main legal arguments. Cite relevant laws and connect evidence to your claims.' },
-    { key: userRole === 'complainant' ? 'defense_argument' : 'prosecution_argument', label: `${opponentLabel} Arguments`, type: 'ai', speaker: opponentLabel, description: '' },
-    { key: 'judge_questions', label: 'Judge Questions', type: 'ai', speaker: 'Judge', description: '' },
-    { key: 'user_answer_judge', label: 'Your Response to Judge', type: 'user', speaker: 'You', description: "Answer the Judge's questions. Address the specific points raised clearly and with evidence." },
-    { key: 'opponent_answer_judge', label: `${opponentLabel} Response to Judge`, type: 'ai', speaker: opponentLabel, description: '' },
-    { key: userRole === 'complainant' ? 'closing_prosecution' : 'closing_defense', label: `Closing Statement - You (${userLabel})`, type: 'user', speaker: 'You', description: 'Deliver your closing statement. Summarize your strongest points and why you should prevail.' },
-    { key: userRole === 'complainant' ? 'closing_defense' : 'closing_prosecution', label: `Closing Statement - ${opponentLabel}`, type: 'ai', speaker: opponentLabel, description: '' },
-  ];
-};
+  const videoRef = useRef<HTMLVideoElement>(null)
 
-const speakerConfig: Record<string, { icon: typeof Gavel; color: string; bg: string }> = {
-  Judge: { icon: Gavel, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800' },
-  'Prosecution Lawyer': { icon: UserX, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800' },
-  'Defense Lawyer': { icon: UserCheck, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800' },
-  'You': { icon: MessageSquare, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800' },
-};
-
-const CourtroomSimulation = ({ caseAnalysis, userRole, onComplete, language }: CourtroomSimulationProps) => {
-  const phases = getPhases(userRole);
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  const [arguments_, setArguments] = useState<Argument[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [userMessage, setUserMessage] = useState('');
-  const [isComplete, setIsComplete] = useState(false);
-  const [extraRounds, setExtraRounds] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const totalPhases = phases.length;
-  const progress = Math.min((currentPhaseIndex / totalPhases) * 100, 100);
-  const currentPhase = currentPhaseIndex < totalPhases ? phases[currentPhaseIndex] : null;
-  const isUserTurn = currentPhase?.type === 'user';
-
-  const opponentLabel = userRole === 'complainant' ? 'Defense Lawyer' : 'Prosecution Lawyer';
-
-  const runAIPhase = async (phaseIndex: number) => {
-    if (phaseIndex >= phases.length) {
-      setIsComplete(true);
-      return;
-    }
-    const phase = phases[phaseIndex];
-    if (phase.type === 'user') return; // Don't auto-run user phases
-
-    setIsProcessing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('courtroom-ai', {
-        body: {
-          action: 'simulate_phase',
-          caseAnalysis,
-          phase: phase.key,
-          previousArguments: arguments_,
-          userRole,
-          language,
-        }
-      });
-      if (error) throw error;
-
-      const newArg: Argument = {
-        speaker: data.speaker,
-        phase: phase.label,
-        content: data.content,
-      };
-      setArguments(prev => [...prev, newArg]);
-      setCurrentPhaseIndex(phaseIndex + 1);
-    } catch (err) {
-      console.error('Phase error:', err);
-      toast.error('Failed to process courtroom phase');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleUserSubmit = async () => {
-    if (!userMessage.trim() || !currentPhase) return;
-
-    const userArg: Argument = {
-      speaker: 'You',
-      phase: currentPhase.label,
-      content: userMessage.trim(),
-      isUser: true,
-    };
-    setArguments(prev => [...prev, userArg]);
-    setUserMessage('');
-    setCurrentPhaseIndex(prev => prev + 1);
-  };
-
-  // Add an extra round: user argues again, then opponent rebuts, then judge comments
-  const handleAddRound = () => {
-    const roundNum = extraRounds + 1;
-    setExtraRounds(roundNum);
-
-    // We don't modify the phases array. Instead we handle extra rounds as a special flow.
-    setIsProcessing(false);
-    setIsComplete(false);
-    // We'll use a special state to handle this
-    setExtraRoundState('user_input');
-  };
-
-  const [extraRoundState, setExtraRoundState] = useState<'none' | 'user_input' | 'processing'>('none');
-
-  const handleExtraRoundSubmit = async () => {
-    if (!userMessage.trim()) return;
-    const roundNum = extraRounds;
-
-    const userArg: Argument = {
-      speaker: 'You',
-      phase: `Additional Argument #${roundNum}`,
-      content: userMessage.trim(),
-      isUser: true,
-    };
-    setArguments(prev => [...prev, userArg]);
-    setUserMessage('');
-    setExtraRoundState('processing');
-
-    try {
-      // Get opponent rebuttal
-      const { data, error } = await supabase.functions.invoke('courtroom-ai', {
-        body: {
-          action: 'user_argument',
-          caseAnalysis,
-          previousArguments: [...arguments_, userArg],
-          userRole,
-          userMessage: userArg.content,
-          language,
-        }
-      });
-      if (error) throw error;
-
-      const newArgs: Argument[] = data.responses.map((r: any) => ({
-        speaker: r.speaker,
-        phase: r.phase,
-        content: r.content,
-      }));
-      setArguments(prev => [...prev, ...newArgs]);
-    } catch (err) {
-      console.error('Extra round error:', err);
-      toast.error('Failed to process extra argument round');
-    } finally {
-      setExtraRoundState('none');
-      setIsComplete(true);
-    }
-  };
-
-  // Auto-run AI phases
   useEffect(() => {
-    if (!isProcessing && currentPhaseIndex < phases.length && !isComplete && extraRoundState === 'none') {
-      const phase = phases[currentPhaseIndex];
-      if (phase.type === 'ai') {
-        const timer = setTimeout(() => runAIPhase(currentPhaseIndex), 800);
-        return () => clearTimeout(timer);
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: false })
+      .then(stream => { if (videoRef.current) videoRef.current.srcObject = stream })
+      .catch(() => {})
+  }, [])
+
+  const addEntry = (role: string, content: string) => {
+    setTranscript(prev => [...prev, { role, content, timestamp: Date.now() }])
+  }
+
+  const setSpeaking = (role: 'judge' | 'opponent', val: boolean) => {
+    setIsSpeaking(prev => ({ ...prev, [role]: val }))
+  }
+
+  const speakAsync = (text: string, role: 'judge' | 'opponent'): Promise<void> =>
+    new Promise(resolve => speak(text, role, resolve))
+
+  const callAI = async (action: string, extra: object = {}) => {
+    const { data, error } = await invokeFunction('courtroom-ai', {
+      body: {
+        action,
+        caseAnalysis,
+        previousArguments: transcript.map(e => ({ speaker: e.role, content: e.content })),
+        language: lang,
+        ...extra,
+      },
+    })
+    if (error) throw error
+    return data
+  }
+
+  const handleStartSession = async () => {
+    setIsLoading(true)
+    try {
+      const judgeResult = await callAI('simulate_phase', { phase: 'case_introduction' })
+      const judgeText   = judgeResult?.dialogue || judgeResult?.content || 'Court is now in session.'
+      setLastJudge(judgeText)
+      addEntry('JUDGE', judgeText)
+      setSpeaking('judge', true)
+      await speakAsync(judgeText, 'judge')
+      setSpeaking('judge', false)
+
+      const oppResult = await callAI('simulate_phase', {
+        phase: userRole === 'complainant' ? 'opening_defense' : 'opening_prosecution',
+        userRole,
+      })
+      const oppText = oppResult?.dialogue || oppResult?.content || 'Opposing counsel is ready to proceed.'
+      setLastOpponent(oppText)
+      addEntry('OPPONENT', oppText)
+      setSpeaking('opponent', true)
+      await speakAsync(oppText, 'opponent')
+      setSpeaking('opponent', false)
+
+      setSessionStarted(true)
+    } catch {
+      toast.error('Failed to start session')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const submitStatement = async (text: string) => {
+    if (!text.trim() || isLoading) return
+    setIsLoading(true)
+    setTextStatement('')
+    addEntry('USER (COUNSEL)', text)
+
+    try {
+      // Single call returns both the judge's reaction AND the opponent's rebuttal
+      const result    = await callAI('user_argument', { userArgument: text, userRole })
+
+      // Judge speaks first (acknowledges + directs opponent)
+      const judgeText = result?.judgeContent || result?.responses?.[0]?.content || ''
+      if (judgeText) {
+        setLastJudge(judgeText)
+        addEntry('JUDGE', judgeText)
+        setSpeaking('judge', true)
+        await speakAsync(judgeText, 'judge')
+        setSpeaking('judge', false)
       }
-    }
-    if (currentPhaseIndex >= phases.length && !isComplete && extraRoundState === 'none') {
-      setIsComplete(true);
-    }
-  }, [currentPhaseIndex, isProcessing, isComplete, extraRoundState]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Opponent rebuts
+      const oppText = result?.content || result?.dialogue || result?.responses?.[1]?.content || ''
+      if (oppText) {
+        setLastOpponent(oppText)
+        addEntry('OPPONENT', oppText)
+        setSpeaking('opponent', true)
+        await speakAsync(oppText, 'opponent')
+        setSpeaking('opponent', false)
+      }
+    } catch {
+      toast.error('Failed to submit statement')
+    } finally {
+      setIsLoading(false)
     }
-  }, [arguments_]);
+  }
 
-  const showUserInput = (isUserTurn && !isProcessing && !isComplete) || extraRoundState === 'user_input';
-  const isExtraRound = extraRoundState === 'user_input';
+  const handleMicClick = () => {
+    if (isLoading || isTTSSpeaking) return
+    if (isListening) stopListening()
+    else startListening(text => submitStatement(text))
+  }
+
+  const handleGetHint = async () => {
+    try {
+      const result   = await callAI('simulate_phase', { phase: 'private_advisor_hint', userRole })
+      const hintText = result?.dialogue || result?.content || result?.hint || ''
+      if (hintText) { setHint(hintText); setShowHint(true) }
+    } catch { toast.error('Could not get hint') }
+  }
+
+  const handleAdvancePhase = async () => {
+    const idx      = PHASES.indexOf(phase)
+    if (idx >= PHASES.length - 1) return
+    const newPhase = PHASES[idx + 1]
+    setPhase(newPhase)
+    try {
+      const result = await callAI('simulate_phase', { phase: `${newPhase}_transition`, userRole })
+      const text   = result?.dialogue || result?.content || `Entering ${PHASE_LABELS[newPhase]}.`
+      setLastJudge(text)
+      addEntry('JUDGE', text)
+      setSpeaking('judge', true)
+      speak(text, 'judge', () => setSpeaking('judge', false))
+      toast.success(`Entering ${PHASE_LABELS[newPhase]}`)
+    } catch { toast.error('Failed to advance phase') }
+  }
+
+  const handleRequestVerdict = async () => {
+    setIsLoading(true)
+    stopSpeaking()
+    try {
+      const result = await callAI('judgment', { userRole })
+      setVerdictData(result)
+      setIsConcluded(true)
+      // Server returns { judgment: "..." } — also accept legacy keys
+      const verdictText = result?.judgment || result?.verdict || result?.content || result?.summary || result?.raw || 'The court has reached its verdict.'
+      addEntry('JUDGE (VERDICT)', verdictText)
+      setSpeaking('judge', true)
+      speak(verdictText, 'judge', () => setSpeaking('judge', false))
+      toast.success('The Judge has delivered a verdict')
+    } catch { toast.error('Failed to get verdict') } finally { setIsLoading(false) }
+  }
+
+  const isInputDisabled  = isLoading || isTTSSpeaking || !sessionStarted
+  const currentPhaseIdx  = PHASES.indexOf(phase)
+  const caseTitle        = caseAnalysis?.caseTitle || caseAnalysis?.title || 'Legal Case'
+  const opponentLabel    = userRole === 'complainant' ? 'Defense Counsel' : 'Prosecution Counsel'
+  const opponentTitle    = userRole === 'complainant' ? 'Defense' : 'Prosecution'
+  const userTitle        = userRole === 'complainant' ? 'Complainant' : 'Defense'
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="text-center space-y-1">
-        <h2 className="text-xl font-bold text-foreground">⚖️ Courtroom in Session</h2>
-        <p className="text-sm text-muted-foreground">
-          {isComplete
-            ? 'All phases complete — ready for judgment'
-            : isUserTurn || isExtraRound
-            ? '🎤 Your turn to speak'
-            : `Phase ${Math.min(currentPhaseIndex + 1, totalPhases)} of ${totalPhases}`}
-        </p>
-      </div>
+    <div className="h-full flex flex-col bg-background overflow-hidden">
 
-      <Progress value={progress} className="h-2" />
+      {/* ── Session sub-header ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/60 backdrop-blur-sm flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <Scale size={16} className="text-muted-foreground" />
+          <span className="text-sm font-semibold text-foreground">AI Courtroom</span>
+          <span className="text-border mx-1">|</span>
+          <span className="text-xs text-muted-foreground font-mono truncate max-w-[120px] sm:max-w-[220px]">{caseTitle}</span>
+          <Badge variant="outline" className="text-[10px]">{userTitle}</Badge>
+        </div>
 
-      {/* Courtroom participants — only 3: Judge, Opponent, You */}
-      <div className="grid grid-cols-3 gap-3 text-center">
-        {[
-          { role: 'Judge', sublabel: 'Neutral' },
-          { role: opponentLabel, sublabel: 'AI Opponent' },
-          { role: 'You', sublabel: userRole === 'complainant' ? 'Complainant (Your Lawyer)' : 'Accused (Your Lawyer)' },
-        ].map(({ role, sublabel }) => {
-          const config = speakerConfig[role] || speakerConfig.Judge;
-          const Icon = config.icon;
-          const isActive = (isUserTurn && role === 'You') ||
-            (isExtraRound && role === 'You') ||
-            (!isUserTurn && !isComplete && currentPhase && currentPhase.speaker === role);
-          return (
-            <div key={role} className={`p-3 rounded-lg border transition-all ${isActive ? config.bg + ' ring-2 ring-primary/30 scale-[1.02]' : 'bg-muted/30 border-border/50'}`}>
-              <Icon className={`h-5 w-5 mx-auto mb-1 ${config.color}`} />
-              <p className={`text-xs font-semibold ${config.color}`}>{role}</p>
-              <p className="text-[10px] text-muted-foreground">{sublabel}</p>
+        {/* Phase progress */}
+        <div className="hidden md:flex items-center gap-1">
+          {PHASES.map((p, i) => (
+            <div key={p} className="flex items-center gap-1">
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium transition-all ${
+                phase === p
+                  ? 'bg-foreground text-background'
+                  : i < currentPhaseIdx
+                  ? 'text-muted-foreground/50 line-through'
+                  : 'text-muted-foreground'
+              }`}>{PHASE_LABELS[p]}</span>
+              {i < PHASES.length - 1 && <ChevronRight size={10} className="text-muted-foreground/30" />}
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => { setAudioEnabled(!audioEnabled); stopSpeaking() }}
+            title={audioEnabled ? 'Mute audio' : 'Enable audio'}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          >
+            {audioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          </button>
+          <button
+            onClick={() => setShowTextInput(v => !v)}
+            className={`px-2 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+              showTextInput
+                ? 'border-foreground/40 text-foreground bg-muted/30'
+                : 'border-border text-muted-foreground hover:border-foreground/30'
+            }`}
+          >
+            TEXT
+          </button>
+        </div>
       </div>
 
-      {/* Proceedings */}
-      <Card>
-        <ScrollArea className="h-[420px] p-4" ref={scrollRef}>
-          <div className="space-y-3">
-            {arguments_.length === 0 && !isProcessing && (
-              <div className="text-center text-muted-foreground text-sm py-8">
-                The hearing is about to begin...
-              </div>
-            )}
-            {arguments_.map((arg, i) => {
-              const config = speakerConfig[arg.speaker] || speakerConfig.Judge;
-              const Icon = config.icon;
-              return (
-                <div key={i} className={`rounded-lg border p-3.5 ${config.bg} ${arg.isUser ? 'ring-1 ring-blue-300 dark:ring-blue-700' : ''}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon className={`h-4 w-4 ${config.color}`} />
-                    <span className={`text-sm font-semibold ${config.color}`}>{arg.speaker}</span>
-                    <Badge variant="outline" className="text-[10px] ml-auto">{arg.phase}</Badge>
-                  </div>
-                  <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{arg.content}</p>
-                </div>
-              );
-            })}
-            {(isProcessing || extraRoundState === 'processing') && (
-              <div className="flex items-center gap-2 p-4 rounded-lg bg-muted/50 border">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">
-                  {extraRoundState === 'processing' ? 'Judge and opponent are responding...' :
-                    currentPhase ? `${currentPhase.speaker} is speaking...` : 'Processing...'}
-                </span>
-              </div>
-            )}
+      {/* ── Main area ──────────────────────────────────────────────── */}
+      {isConcluded && verdictData ? (
+        <CourtroomFeedbackReport
+          verdictData={verdictData}
+          caseTitle={caseTitle}
+          transcript={transcript}
+          onReset={() => onComplete([])}
+        />
+      ) : (
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+
+          {/* Sidebar — hidden on mobile, shown on md+ */}
+          <div className="hidden md:flex w-60 flex-shrink-0 border-r border-border flex-col bg-card/30">
+            <div className="flex border-b border-border">
+              {(['transcript', 'evidence'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 py-2 text-xs font-medium capitalize transition-colors ${
+                    activeTab === tab
+                      ? 'text-foreground border-b-2 border-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {activeTab === 'transcript'
+                ? <CourtroomTranscript entries={transcript} />
+                : <CourtroomEvidenceBoard caseAnalysis={caseAnalysis} userRole={userRole} />}
+            </div>
           </div>
-        </ScrollArea>
-      </Card>
 
-      {/* User input area */}
-      {showUserInput && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">
-                {isExtraRound ? `Additional Argument #${extraRounds}` : currentPhase?.label}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {isExtraRound
-                  ? 'Present an additional argument. The Judge will acknowledge it and the opponent will rebut.'
-                  : currentPhase?.description}
-              </p>
+          {/* Center: panels + controls */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+
+            {/* 3 participant panels — single col on mobile, 3-col on desktop */}
+            <div className="flex-1 p-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-center overflow-y-auto md:overflow-hidden md:max-h-[56vh]">
+              <CourtroomVideoPanel
+                role="opponent"
+                name={opponentLabel}
+                title={opponentTitle}
+                isSpeaking={isSpeaking.opponent}
+                isTTSSpeaking={isTTSSpeaking && ttsRole === 'opponent'}
+                lastStatement={lastOpponent}
+              />
+              <CourtroomVideoPanel
+                role="judge"
+                name="The Honourable AI"
+                title="Judge"
+                isSpeaking={isSpeaking.judge}
+                isTTSSpeaking={isTTSSpeaking && ttsRole === 'judge'}
+                lastStatement={lastJudge}
+              />
+              <CourtroomVideoPanel
+                role="user"
+                name="You — Counsel"
+                title={userTitle}
+                isSpeaking={isListening}
+                isTTSSpeaking={false}
+                isUser={true}
+                videoRef={videoRef}
+              />
             </div>
-            <Textarea
-              value={userMessage}
-              onChange={(e) => setUserMessage(e.target.value)}
-              placeholder="Type your argument here..."
-              className="min-h-[120px]"
-              autoFocus
-            />
-            <Button
-              onClick={isExtraRound ? handleExtraRoundSubmit : handleUserSubmit}
-              disabled={!userMessage.trim() || isProcessing}
-              className="w-full"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Submit to Court
-            </Button>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Bottom actions */}
-      {isComplete && (
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleAddRound} className="flex-1">
-            <MessageSquare className="mr-2 h-4 w-4" /> Add Another Round
-          </Button>
-          <Button onClick={() => onComplete(arguments_)} className="flex-1" size="lg">
-            <Gavel className="mr-2 h-4 w-4" /> Proceed to Judgment
-          </Button>
+            {/* Mobile-only transcript (shows below video panels on small screens) */}
+            {transcript.length > 0 && (
+              <div className="md:hidden mx-3 mb-2 max-h-32 overflow-y-auto bg-muted/20 border border-border rounded-lg px-3 py-2">
+                {transcript.slice(-3).map((e, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">{e.role}: </span>
+                    <span className="text-xs text-foreground">{e.content.slice(0, 120)}{e.content.length > 120 ? '…' : ''}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Hint bar */}
+            {showHint && hint && (
+              <div className="mx-4 mb-2 bg-muted/40 border border-border rounded-lg px-4 py-3 animate-slide-up">
+                <div className="flex items-center gap-1.5 text-muted-foreground text-xs font-semibold mb-1">
+                  <Lightbulb size={12} />
+                  <span>Advisor — Private</span>
+                  <button onClick={() => setShowHint(false)} className="ml-auto text-muted-foreground/60 hover:text-foreground">
+                    <X size={12} />
+                  </button>
+                </div>
+                <p className="text-sm text-foreground">{hint}</p>
+              </div>
+            )}
+
+            {/* ── Bottom input area ────────────────────────────────── */}
+            <div className="border-t border-border bg-card/40 px-4 py-4 flex-shrink-0">
+
+              {!sessionStarted ? (
+                <div className="text-center space-y-3">
+                  <p className="text-sm text-muted-foreground">All parties are ready. Call the court to order.</p>
+                  <Button
+                    onClick={handleStartSession}
+                    disabled={isLoading}
+                    className="gap-2"
+                  >
+                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Gavel size={16} />}
+                    Call Court to Order
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {/* Live mic transcript */}
+                  {(isListening || liveTranscript) && (
+                    <div className="mb-3 px-4 py-2.5 bg-muted/30 border border-border rounded-lg animate-slide-up">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+                        <span className="text-xs text-muted-foreground font-medium">Listening…</span>
+                      </div>
+                      <p className="text-sm text-foreground italic min-h-[20px]">{liveTranscript || '…'}</p>
+                    </div>
+                  )}
+
+                  {/* TTS indicator */}
+                  {isTTSSpeaking && (
+                    <div className="mb-3 px-4 py-2.5 bg-muted/20 border border-border rounded-lg flex items-center gap-3 animate-slide-up">
+                      <Volume2 size={14} className="text-muted-foreground animate-pulse" />
+                      <span className="text-xs text-muted-foreground">
+                        {ttsRole === 'judge' ? '⚖️ Judge is speaking…' : '👨‍💼 Opponent is speaking…'}
+                      </span>
+                      <button onClick={stopSpeaking} className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors">
+                        Skip
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Main controls */}
+                  <div className="flex items-center justify-center gap-6 mb-3">
+
+                    {/* Hint */}
+                    <button
+                      onClick={handleGetHint}
+                      disabled={isInputDisabled}
+                      title="Get private hint from advisor"
+                      className="p-2.5 rounded-full border border-border text-muted-foreground
+                        hover:text-foreground hover:border-foreground/40 transition-all disabled:opacity-30"
+                    >
+                      <Lightbulb size={18} />
+                    </button>
+
+                    {/* Mic */}
+                    <div className="flex flex-col items-center">
+                      <button
+                        onClick={handleMicClick}
+                        disabled={isInputDisabled && !isListening}
+                        className={`relative w-16 h-16 rounded-full flex items-center justify-center
+                          font-bold transition-all duration-200 shadow-md
+                          ${isListening
+                            ? 'bg-destructive text-white ring-4 ring-destructive/30'
+                            : isInputDisabled
+                            ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                            : 'bg-foreground text-background hover:bg-foreground/90'
+                          }`}
+                      >
+                        {isListening
+                          ? <MicOff size={26} />
+                          : isLoading
+                          ? <Loader2 size={26} className="animate-spin" />
+                          : <Mic size={26} />}
+                        {isListening && (
+                          <span className="absolute inset-0 rounded-full border-2 border-destructive/60 animate-ping" />
+                        )}
+                      </button>
+                      <span className="mt-1.5 text-xs text-muted-foreground">
+                        {isListening ? 'Tap to stop' : isTTSSpeaking ? 'Wait…' : isLoading ? 'Processing…' : 'Tap to speak'}
+                      </span>
+                    </div>
+
+                    {/* Phase advance + verdict */}
+                    <div className="flex flex-col gap-2 items-center">
+                      {phase !== 'verdict' && (
+                        <button
+                          onClick={handleAdvancePhase}
+                          disabled={isInputDisabled}
+                          title="Advance to next phase"
+                          className="p-2.5 rounded-full border border-border text-muted-foreground
+                            hover:text-foreground hover:border-foreground/40 transition-all disabled:opacity-30"
+                        >
+                          <ChevronRight size={18} />
+                        </button>
+                      )}
+                      <button
+                        onClick={handleRequestVerdict}
+                        disabled={isInputDisabled}
+                        title="Request verdict"
+                        className="p-2.5 rounded-full border border-destructive/40 text-destructive
+                          hover:bg-destructive/10 transition-all disabled:opacity-30"
+                      >
+                        <Gavel size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Text input (collapsible) */}
+                  {showTextInput && (
+                    <div className="flex gap-2 items-end mt-1 animate-slide-up">
+                      <textarea
+                        value={textStatement}
+                        onChange={e => setTextStatement(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitStatement(textStatement) } }}
+                        placeholder="Type your argument… (Enter to submit)"
+                        rows={2}
+                        disabled={isInputDisabled}
+                        className="flex-1 bg-muted/30 border border-border rounded-lg
+                          px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none
+                          focus:outline-none focus:ring-1 focus:ring-foreground/30 transition-all disabled:opacity-40"
+                      />
+                      <Button
+                        onClick={() => submitStatement(textStatement)}
+                        disabled={!textStatement.trim() || isInputDisabled}
+                        size="sm"
+                        className="h-full px-3"
+                      >
+                        <Send size={16} />
+                      </Button>
+                    </div>
+                  )}
+
+                  {!micAvailable && (
+                    <p className="text-center text-xs text-muted-foreground mt-2">
+                      Microphone not available — enable TEXT input above to type your arguments.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
-  );
-};
-
-export default CourtroomSimulation;
+  )
+}

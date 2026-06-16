@@ -4,6 +4,7 @@ import { useWhisperRecognition } from '@/hooks/useWhisperRecognition';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isIOSDevice } from '@/lib/device/isIOSDevice';
+import { isMacDevice } from '@/lib/device/isMacDevice';
 import { useTheme } from '@/contexts/ThemeContext';
 import { unlockAudioContext } from '@/hooks/useMobileAudio';
 
@@ -16,12 +17,25 @@ interface AiOrbProps {
 
 const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLanguage = 'en-IN' }: AiOrbProps) => {
   const [isActive, setIsActive] = useState(false);
-  const [continuousMode, setContinuousMode] = useState(true);
+  const [continuousMode, setContinuousMode] = useState(false); // CHANGED TO FALSE: Manual Tap Only
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const { theme } = useTheme();
   const isLightMode = theme === 'light';
 
   const isIOS = useMemo(() => isIOSDevice(), []);
+  const isMac = useMemo(() => isMacDevice(), []);
+
+  // Mac users get a 30% larger orb + title for better presence on big displays.
+  const orbSizeClasses = isMac
+    ? 'w-32 h-32 sm:w-44 sm:h-44 lg:w-48 lg:h-48'
+    : 'w-24 h-24 sm:w-32 sm:h-32 lg:w-36 lg:h-36';
+  const titleSizeClasses = isMac
+    ? 'text-3xl sm:text-4xl lg:text-5xl'
+    : 'text-2xl sm:text-3xl lg:text-4xl';
+  const subtitleSizeClasses = isMac
+    ? 'text-sm sm:text-base lg:text-lg'
+    : 'text-xs sm:text-sm lg:text-base';
+
   const { currentLanguage } = useLanguage();
 
   const {
@@ -47,13 +61,17 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
     lastErrorCode: whisperLastErrorCode,
   } = useWhisperRecognition();
 
-  const isListening = isIOS ? isRecording : webIsListening;
-  const transcript = isIOS ? whisperTranscript : webTranscript;
-  const detectedLanguage = isIOS ? 'en-IN' : webDetectedLanguage;
-  const speechSupported = isIOS ? whisperSupported : webSpeechSupported;
-  const speechError = isIOS ? whisperError : webSpeechError;
+  // Prefer Native Web Speech API (SFSpeechRecognizer on iOS) if supported
+  // Only fall back to Whisper (WavRecorder) if native is not available
+  const useNativeSpeech = webSpeechSupported;
 
-  const resetTranscript = () => (isIOS ? resetWhisperTranscript() : resetWebTranscript());
+  const isListening = useNativeSpeech ? webIsListening : isRecording;
+  const transcript = useNativeSpeech ? webTranscript : whisperTranscript;
+  const detectedLanguage = useNativeSpeech ? webDetectedLanguage : (isIOS ? 'en-IN' : 'en-IN'); 
+  const speechSupported = useNativeSpeech ? webSpeechSupported : whisperSupported;
+  const speechError = useNativeSpeech ? webSpeechError : whisperError;
+
+  const resetTranscript = () => (useNativeSpeech ? resetWebTranscript() : resetWhisperTranscript());
 
   const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported, isLoading } = useTextToSpeech();
   
@@ -72,10 +90,33 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
     };
   }, []);
 
+  // NUCLEAR OPTION: Listen for Global Speech Events to Hard-Stop Microphone
+  useEffect(() => {
+    const handleSpeechStart = () => {
+      console.log('AI Started Speaking - HARD STOP MIC');
+      if (useNativeSpeech) stopWebListening();
+      else stopRecording();
+      setIsActive(false);
+      wasSpeakingRef.current = true;
+    };
+
+    const handleSpeechStop = () => {
+      console.log('AI Stopped Speaking - Ready for manual tap');
+      // In manual mode, we do NOT queue a mic restart. We wait for user tap.
+    };
+
+    window.addEventListener('ai-speech-started', handleSpeechStart);
+    window.addEventListener('ai-speech-stopped', handleSpeechStop);
+
+    return () => {
+      window.removeEventListener('ai-speech-started', handleSpeechStart);
+      window.removeEventListener('ai-speech-stopped', handleSpeechStop);
+    };
+  }, [continuousMode, isProcessing, isLoading, useNativeSpeech, startWebListening, stopWebListening, startRecording, stopRecording, resetTranscript]);
+
   // Auto-send after 2 seconds of pause while listening
   useEffect(() => {
-    if (isIOS) return;
-
+    // On iOS native, we might not get partial results as frequently, but this logic still holds
     if (isListening && transcript && transcript !== lastTranscriptRef.current) {
       lastTranscriptRef.current = transcript;
       
@@ -85,19 +126,35 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
       
       autoSendTimerRef.current = setTimeout(() => {
         if (transcript.trim() && onTranscript) {
-          stopWebListening();
-          setIsActive(false);
+          
+          // MANUAL MODE FIX:
+          // Immediately STOP listening when we detect a pause and send the message.
+          if (useNativeSpeech) {
+             stopWebListening();
+          } else {
+             stopRecording();
+          }
+          setIsActive(false); // Turn off the Orb
+          
           onTranscript(transcript.trim(), detectedLanguage);
           resetTranscript();
           lastTranscriptRef.current = '';
         }
-      }, 2000);
+      }, 1000); // Reduced delay to 1.0s for snappier "Stop & Send"
     }
-  }, [isIOS, transcript, isListening, onTranscript, stopWebListening, resetTranscript, detectedLanguage]);
+  }, [isIOS, transcript, isListening, onTranscript, stopWebListening, resetTranscript, detectedLanguage, useNativeSpeech, responseText]);
 
   // Auto-speak response when received (only after user interaction for mobile)
   useEffect(() => {
     if (responseText && !isProcessing && ttsSupported && !hasSpokenRef.current && hasUserInteracted) {
+      // CRITICAL FIX: Ensure we don't start listening immediately while speaking
+      // HARD LOCK: Stop listening immediately
+      if (isListening) {
+        if (useNativeSpeech) stopWebListening();
+        else stopRecording(); 
+        setIsActive(false);
+      }
+
       hasSpokenRef.current = true;
       speak(responseText, responseLanguage);
     }
@@ -105,31 +162,48 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
     if (isProcessing) {
       hasSpokenRef.current = false;
     }
-  }, [responseText, isProcessing, speak, ttsSupported, responseLanguage, hasUserInteracted]);
+  }, [responseText, isProcessing, speak, ttsSupported, responseLanguage, hasUserInteracted, isListening, useNativeSpeech, stopWebListening, stopRecording]);
 
   // Continuous conversation: auto-start listening when speaking ends
   useEffect(() => {
-    if (isIOS) return;
+    // Note: We removed the !continuousMode check to allow auto-restart
+    if (isIOS) return; 
 
     if (isSpeaking) {
       wasSpeakingRef.current = true;
+      // HARD LOCK: Ensure listening is OFF while speaking
+      if (isListening) {
+         if (useNativeSpeech) stopWebListening();
+         else stopRecording();
+         setIsActive(false);
+      }
     }
     
     if (!isSpeaking && wasSpeakingRef.current && continuousMode && speechSupported && !isProcessing && !isLoading) {
       wasSpeakingRef.current = false;
+      // We are in manual mode now, so this won't trigger, but leaving it for safety
       const timer = setTimeout(async () => {
-        if (!isListening && !isProcessing) {
+        // DOUBLE CHECK: Are we still NOT speaking?
+        if (!isListening && !isProcessing && !isSpeaking) { 
           try {
-            await startWebListening();
+            // HARD RESET: Clear any buffered transcript
+            resetTranscript();
+            lastTranscriptRef.current = '';
+            
+            if (useNativeSpeech) {
+              await startWebListening();
+            } else {
+              await startRecording();
+            }
             setIsActive(true);
           } catch (e) {
             console.error('Failed to auto-start listening:', e);
           }
         }
-      }, 500);
+      }, 1200); // 1.2 SECONDS DELAY - Optimal balance for echo vs speed
       return () => clearTimeout(timer);
     }
-  }, [isIOS, isSpeaking, continuousMode, speechSupported, isProcessing, isListening, startWebListening, isLoading]);
+  }, [isIOS, isSpeaking, continuousMode, speechSupported, isProcessing, isListening, startWebListening, startRecording, isLoading, useNativeSpeech, stopWebListening, stopRecording, resetTranscript]);
 
   const handleOrbClick = async () => {
     // Mark that user has interacted (enables audio on mobile)
@@ -144,55 +218,42 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
       return;
     }
 
-    if (isIOS) {
-      if (isRecording) {
-        if (autoSendTimerRef.current) {
-          clearTimeout(autoSendTimerRef.current);
-        }
-
-        try {
-          const result = await stopRecording();
-          setIsActive(false);
-          if (result.text.trim() && onTranscript) {
-            onTranscript(result.text.trim(), result.language);
-          }
-          resetTranscript();
-          lastTranscriptRef.current = '';
-        } catch (e) {
-          console.error('Failed to stop recording:', e);
-          setIsActive(false);
-        }
-      } else if (speechSupported) {
-        try {
-          await startRecording();
-          setIsActive(true);
-        } catch (e) {
-          console.error('Failed to start recording:', e);
-          setIsActive(false);
-        }
-      }
-      return;
-    }
-
     if (isListening) {
       if (autoSendTimerRef.current) {
         clearTimeout(autoSendTimerRef.current);
       }
+      
       if (transcript.trim() && onTranscript) {
         onTranscript(transcript.trim(), detectedLanguage);
         resetTranscript();
         lastTranscriptRef.current = '';
       }
-      stopWebListening();
-      setIsActive(false);
-    } else if (speechSupported) {
-      try {
-        await startWebListening();
-        setIsActive(true);
-      } catch (e) {
-        console.error('Failed to start listening:', e);
-        setIsActive(false);
+      
+      if (useNativeSpeech) {
+        stopWebListening();
+      } else {
+        await stopRecording();
       }
+      setIsActive(false);
+    } else {
+       // Start listening
+       if (useNativeSpeech) {
+         try {
+           await startWebListening();
+           setIsActive(true);
+         } catch (e) {
+            console.error('Failed to start native listening:', e);
+            setIsActive(false);
+         }
+       } else if (speechSupported) {
+          try {
+            await startRecording();
+            setIsActive(true);
+          } catch (e) {
+            console.error('Failed to start recording:', e);
+            setIsActive(false);
+          }
+       }
     }
   };
 
@@ -236,7 +297,7 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
         }`} />
         
         {/* Main orb */}
-        <div className={`relative w-28 h-28 sm:w-36 sm:h-36 rounded-full backdrop-blur-sm border flex items-center justify-center orb-glow orb-pulse transition-all duration-300 ${
+        <div className={`relative ${orbSizeClasses} rounded-full backdrop-blur-sm border flex items-center justify-center orb-glow orb-pulse transition-all duration-300 shadow-2xl ${
           displayState !== 'idle' ? 'scale-110' : 'scale-100'
         } ${
           displayState === 'speaking' 
@@ -296,11 +357,11 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
       </button>
 
       {/* Text labels */}
-      <div className="text-center">
-        <h2 className="text-2xl sm:text-3xl font-bold text-foreground tracking-widest">
+      <div className="text-center mt-2">
+        <h2 className={`${titleSizeClasses} font-extrabold text-foreground tracking-[0.3em]`}>
           CARE
         </h2>
-        <p className="text-muted-foreground text-xs sm:text-sm mt-1">
+        <p className={`text-muted-foreground ${subtitleSizeClasses} mt-2 tracking-wide`}>
           {displayState === 'thinking' && (isLoading ? 'Preparing audio...' : 'Thinking...')}
           {displayState === 'speaking' && 'Speaking...'}
           {displayState === 'listening' && `Listening... (${languageNames[detectedLanguage] || 'English'})`}
@@ -328,9 +389,6 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
         </div>
       )}
 
-      <p className="text-muted-foreground/70 text-xs sm:text-sm">
-        {isSpeaking ? 'Tap to stop' : 'Speak in Hindi, Tamil, Telugu, or any Indian language'}
-      </p>
     </div>
   );
 };

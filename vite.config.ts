@@ -7,10 +7,10 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
-    port: 8080,
+    port: 4000,
     cors: true,
   },
-  plugins: [react(), basicSsl()].filter(Boolean),
+  plugins: [react(), process.env.PREVIEW ? null : basicSsl()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -19,5 +19,9 @@ export default defineConfig(({ mode }) => ({
   },
   optimizeDeps: {
     include: ["react", "react-dom", "react/jsx-runtime"],
+  },
+  // amazon-cognito-identity-js references Node's `global`; polyfill it for browser
+  define: {
+    global: 'globalThis',
   },
 }));

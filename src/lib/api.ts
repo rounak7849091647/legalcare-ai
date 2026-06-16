@@ -1,54 +1,78 @@
-import { supabase } from '@/integrations/supabase/client';
-
-const API_URL = import.meta.env.VITE_API_URL; // e.g., "https://my-aws-api.com/api"
-
-interface FunctionOptions {
-  body?: any;
+declare global {
+  interface Window {
+    __LEGALCARE_CONFIG__?: { apiUrl?: string };
+  }
 }
 
-export const invokeFunction = async (functionName: string, options: FunctionOptions) => {
-  // If we have a custom API URL, use it (AWS/Express backend)
-  if (API_URL) {
-    let endpoint = '';
-    if (functionName === 'legal-chat') endpoint = `${API_URL}/chat`;
-    if (functionName === 'voice-to-text') endpoint = `${API_URL}/voice`;
+import { getFreshToken } from '@/lib/auth-token';
 
-    if (!endpoint) throw new Error(`Unknown function: ${functionName}`);
+// Base URL of the AWS/Express backend — no trailing slash.
+// Resolution order (first non-empty wins):
+//   1. window.__LEGALCARE_CONFIG__.apiUrl  ← runtime, edit /legalcare-config.js after deploy
+//   2. import.meta.env.VITE_API_URL        ← build-time
+function resolveApiUrl(): string {
+  if (typeof window !== 'undefined') {
+    const runtime = window.__LEGALCARE_CONFIG__?.apiUrl?.trim();
+    if (runtime) return runtime.replace(/\/$/, '');
+  }
+  const buildTime = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  return (buildTime || 'http://localhost:8080').replace(/\/$/, '');
+}
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Add Authorization header if your AWS API requires it
-        // 'Authorization': `Bearer ${token}` 
-      },
-      body: JSON.stringify(options.body),
-    });
+export const getApiUrl = resolveApiUrl;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error: ${response.status} ${errorText}`);
-    }
+interface FunctionOptions { body?: unknown; }
 
-    // Handle streaming response if applicable (for chat)
-    // Note: The caller handles streaming for chat separately usually.
-    // This helper is for JSON responses.
-    
-    // Check content type
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      return { data, error: null };
-    }
-    
-    return { data: await response.text(), error: null };
+/**
+ * Calls the AWS Express backend at /functions/v1/<name>.
+ * Used for AI functions, OTP, email validation etc.
+ */
+export const invokeFunction = async (functionName: string, options: FunctionOptions = {}) => {
+  const endpoint = `${resolveApiUrl()}/functions/v1/${functionName}`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options.body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error ${response.status}: ${errorText}`);
   }
 
-  // Fallback to Supabase Edge Functions
-  return await supabase.functions.invoke(functionName, options);
+  const contentType = response.headers.get('content-type');
+  if (contentType?.includes('application/json')) {
+    const data = await response.json();
+    return { data, error: null };
+  }
+  return { data: await response.text(), error: null };
 };
 
-export const getChatUrl = () => {
-  if (API_URL) return `${API_URL}/chat`;
-  return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/legal-chat`;
+/**
+ * Authenticated fetch — attaches the Cognito access token.
+ * Used for data API routes (/api/cases, /api/calendar-events, etc.)
+ */
+export const authFetch = async <T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> => {
+  // Always get a fresh (auto-refreshed) token — handles the 60-min expiry transparently
+  const token = await getFreshToken();
+  const response = await fetch(`${resolveApiUrl()}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers as Record<string, string> || {}),
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 };
+
+export const getChatUrl = (): string =>
+  `${resolveApiUrl()}/functions/v1/legal-chat`;

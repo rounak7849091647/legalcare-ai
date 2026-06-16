@@ -4,6 +4,171 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Textarea } from '@/components/ui/textarea';
 import { Upload, FileText, X, Scale } from 'lucide-react';
 import { toast } from 'sonner';
+import { isMobileDevice } from '@/lib/device/isIOSDevice';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import mammoth from 'mammoth';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
+const isPdfFile = async (file: File): Promise<boolean> => {
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.pdf')) return true;
+  if ((file.type || '').toLowerCase().includes('pdf')) return true;
+  try {
+    const headerBuf = await file.slice(0, 4).arrayBuffer();
+    const header = new Uint8Array(headerBuf);
+    return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+  } catch {
+    return false;
+  }
+};
+
+const extractPdfText = async (buf: ArrayBuffer): Promise<string> => {
+  const load = async (disableWorker: boolean) => {
+    // pdfjs-dist v5: getDocument expects a fresh buffer each call (it transfers ownership)
+    const task = pdfjsLib.getDocument({ data: buf.slice(0), disableWorker });
+    const pdf = await task.promise;
+
+    const shouldTruncate = disableWorker && pdf.numPages > 20;
+    const maxPages = shouldTruncate ? 20 : pdf.numPages;
+    if (shouldTruncate) {
+      toast.message(`Large PDF detected (${pdf.numPages} pages). Extracting first ${maxPages} pages for stability.`);
+    }
+
+    let text = '';
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i);
+      // pdfjs-dist v5: `normalizeWhitespace` was removed; normalization is on by default
+      // (opt out via `disableNormalization: true`). We keep default normalization.
+      const content = await page.getTextContent();
+      const items = (content.items as any[])
+        .filter((it) => typeof it?.str === 'string' && it.str.length > 0)
+        .map((it) => ({
+          str: it.str as string,
+          x: Array.isArray(it.transform) ? it.transform[4] : 0,
+          y: Array.isArray(it.transform) ? it.transform[5] : 0,
+          hasEOL: !!it.hasEOL,
+        }));
+
+      const byLine = new Map<number, { x: number; str: string }[]>();
+      for (const it of items) {
+        const yKey = Math.round(it.y);
+        const arr = byLine.get(yKey) || [];
+        arr.push({ x: it.x, str: it.str });
+        byLine.set(yKey, arr);
+      }
+
+      const yKeys = Array.from(byLine.keys()).sort((a, b) => b - a);
+      for (const y of yKeys) {
+        const line = (byLine.get(y) || [])
+          .sort((a, b) => a.x - b.x)
+          .map((w) => w.str)
+          .join(' ')
+          .replace(/\s+/g, ' ');
+        if (line.trim()) text += line + '\n';
+      }
+
+      text += '\n';
+      // Cleanup page resources to avoid memory bloat on large PDFs
+      try { (page as any).cleanup?.(); } catch { /* noop */ }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    try { await (pdf as any).destroy?.(); } catch { /* noop */ }
+
+    if (maxPages < pdf.numPages) {
+      text += `\n[Note: Extracted ${maxPages}/${pdf.numPages} pages for stability]\n`;
+    }
+
+    return text.trim();
+  };
+
+  // Try worker first on every platform (much faster, better text extraction).
+  // Fall back to no-worker on ANY failure — covers Cloudflare Pages worker-fetch
+  // 404s, CSP blocks, and mobile WebView quirks.
+  const preferNoWorker = isMobileDevice();
+  const order = preferNoWorker ? [true, false] : [false, true];
+  let lastErr: unknown;
+  for (const disableWorker of order) {
+    try {
+      return await load(disableWorker);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[pdf] extraction failed (disableWorker=${disableWorker}):`, err);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('PDF extraction failed');
+};
+
+class ScannedPdfError extends Error {
+  constructor(msg: string) { super(msg); this.name = 'ScannedPdfError'; }
+}
+
+const isImageFile = (file: File): boolean => {
+  const name = (file.name || '').toLowerCase();
+  const type = (file.type || '').toLowerCase();
+  if (type.startsWith('image/')) return true;
+  return /\.(png|jpe?g|webp|gif|heic|heif|bmp)$/i.test(name);
+};
+
+const extractImageText = async (file: File): Promise<string> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+  }
+  const base64 = btoa(binary);
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const mime = file.type
+    || (ext === 'png' ? 'image/png'
+      : ext === 'webp' ? 'image/webp'
+      : ext === 'gif' ? 'image/gif'
+      : ext === 'heic' || ext === 'heif' ? 'image/heic'
+      : ext === 'bmp' ? 'image/bmp'
+      : 'image/jpeg');
+  const apiBase = (import.meta as any).env?.VITE_API_BASE_URL || 'https://api.legalcareai.com';
+  const resp = await fetch(`${apiBase}/functions/v1/vision-extract`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64: base64, mimeType: mime, fileName: file.name }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `Image read failed (HTTP ${resp.status})`);
+  }
+  const json = await resp.json();
+  return (json.combined || json.text || json.description || '').trim();
+};
+
+const extractFileText = async (file: File): Promise<string> => {
+  const name = (file.name || '').toLowerCase();
+  if (isImageFile(file)) {
+    return await extractImageText(file);
+  }
+  if (await isPdfFile(file)) {
+    const buf = await file.arrayBuffer();
+    const text = await extractPdfText(buf);
+    // Heuristic: a scanned (image-only) PDF has no extractable text layer.
+    // <40 non-whitespace chars over the whole document is almost certainly scanned.
+    const nonWs = text.replace(/\s+/g, '').length;
+    if (nonWs < 40) {
+      throw new ScannedPdfError(
+        'This PDF appears to be scanned (image-only) with no text layer. ' +
+        'Please use the manual text box below, or upload a text-based PDF / .docx / .txt file.'
+      );
+    }
+    return text;
+  }
+  if (name.endsWith('.docx') || name.endsWith('.doc')) {
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    return result.value.trim();
+  }
+  return (await file.text()).trim();
+};
 
 interface UploadedFile {
   name: string;
@@ -26,15 +191,33 @@ const FileUpload = ({ onSubmit, isLoading }: FileUploadProps) => {
     if (!selectedFiles) return;
 
     for (const file of Array.from(selectedFiles)) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`"${file.name}" is too large (max 5MB per file)`);
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error(`"${file.name}" is too large (max 100MB per file)`);
         continue;
       }
       try {
-        const text = await file.text();
+        const text = await extractFileText(file);
+        if (!text) {
+          toast.error(`"${file.name}" appears empty or unreadable`);
+          continue;
+        }
         setFiles(prev => [...prev, { name: file.name, content: text, size: file.size }]);
-      } catch {
-        toast.error(`Failed to read "${file.name}"`);
+      } catch (err) {
+        console.error('File read error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (err instanceof ScannedPdfError) {
+          toast.error(msg, { duration: 8000 });
+        } else if (/worker|fetch|network/i.test(msg)) {
+          toast.error(
+            `Failed to load PDF reader for "${file.name}". ` +
+            `Check your internet, then retry — or paste the text manually below.`,
+            { duration: 8000 }
+          );
+        } else if (/password|encrypted/i.test(msg)) {
+          toast.error(`"${file.name}" is password-protected. Remove the password and try again.`);
+        } else {
+          toast.error(`Failed to read "${file.name}": ${msg.slice(0, 120)}`);
+        }
       }
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -85,7 +268,7 @@ const FileUpload = ({ onSubmit, isLoading }: FileUploadProps) => {
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept=".txt,.md,.pdf,.doc,.docx,.rtf"
+            accept=".txt,.md,.pdf,.doc,.docx,.rtf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.bmp,image/*"
             className="hidden"
             multiple
           />

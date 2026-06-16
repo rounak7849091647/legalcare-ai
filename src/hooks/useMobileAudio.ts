@@ -23,8 +23,12 @@ let isAudioUnlocked = false;
  * Standalone function to unlock audio context within a user gesture.
  * Can be called directly without the hook.
  */
-export const unlockAudioContext = async (): Promise<void> => {
-  if (isAudioUnlocked && sharedAudioContext?.state === 'running') return;
+export const getAudioContext = (): AudioContext | null => {
+  return sharedAudioContext;
+};
+
+export const unlockAudioContext = async (): Promise<AudioContext | null> => {
+  if (isAudioUnlocked && sharedAudioContext?.state === 'running') return sharedAudioContext;
 
   try {
     if (!sharedAudioContext) {
@@ -34,15 +38,26 @@ export const unlockAudioContext = async (): Promise<void> => {
     if (sharedAudioContext.state === 'suspended') {
       await sharedAudioContext.resume();
     }
-    const buffer = sharedAudioContext.createBuffer(1, 1, 22050);
+    // Play silent buffer to fully unlock audio on iOS
+    // Increase duration slightly to ensure it registers
+    const buffer = sharedAudioContext.createBuffer(1, 1024, 22050);
     const source = sharedAudioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(sharedAudioContext.destination);
     source.start(0);
+    
+    // Wait for the context to actually be running
+    if (sharedAudioContext.state !== 'running') {
+       // double check resume
+       await sharedAudioContext.resume();
+    }
+    
     isAudioUnlocked = true;
-    console.log('Audio context unlocked');
+    console.log('Audio context unlocked, state:', sharedAudioContext.state);
+    return sharedAudioContext;
   } catch (err) {
     console.error('Failed to unlock audio context:', err);
+    return null;
   }
 };
 

@@ -9,7 +9,7 @@ interface ThemeContextType {
 }
 
 const defaultContext: ThemeContextType = {
-  theme: 'dark',
+  theme: 'light',
   toggleTheme: () => {},
   isAnimating: false,
 };
@@ -18,13 +18,13 @@ const ThemeContext = createContext<ThemeContextType>(defaultContext);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return 'dark';
+    if (typeof window === 'undefined') return 'light';
     const stored = localStorage.getItem('legalcare-theme');
     if (stored === 'light' || stored === 'dark') return stored;
     if (window.matchMedia('(prefers-color-scheme: light)').matches) {
       return 'light';
     }
-    return 'dark';
+    return 'light';
   });
   
   const [isAnimating, setIsAnimating] = useState(false);

@@ -22,7 +22,7 @@ import {
   Heart,
   Filter
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { invokeFunction } from '@/lib/api';
 import { toast } from 'sonner';
 
 const communitySchema = {
@@ -143,14 +143,11 @@ const Community = () => {
 
     try {
       // Get AI summary/guiding questions
-      const { data, error } = await supabase.functions.invoke('legal-chat', {
+      const { data } = await invokeFunction('legal-chat', {
         body: {
-          message: `As a community facilitator, briefly summarize this post and provide 2-3 guiding questions for the community:
-          
-Title: ${newPost.title}
-Content: ${newPost.content}`,
-          language: 'en'
-        }
+          message: `As a community facilitator, briefly summarize this post and provide 2-3 guiding questions for the community:\n\nTitle: ${newPost.title}\nContent: ${newPost.content}`,
+          language: 'en',
+        },
       });
 
       const post: Post = {

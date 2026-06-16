@@ -1,23 +1,10 @@
-import { useState, useEffect } from 'react';
-import { 
-  FileText, 
-  Users, 
-  Calculator, 
-  Home,
-  Settings,
-  LogIn,
-  LogOut,
-  LayoutDashboard,
-  User,
-  MessageSquare,
-  Globe,
-  Sun,
-  Moon
+import { useState } from 'react';
+import {
+  FileText, Users, Calculator, Home, Settings,
+  LogIn, LogOut, LayoutDashboard, MessageSquare, Globe, Sun, Moon,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { User as SupabaseUser } from '@supabase/supabase-js';
-import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -25,28 +12,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-  useSidebar,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
+  SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
+  SidebarTrigger, useSidebar,
 } from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
   const { theme, toggleTheme } = useTheme();
   const { currentLanguage, setLanguage, availableLanguages } = useLanguage();
-  const [fontSize, setFontSize] = useState('medium');
+  const [fontSize, setFontSize]           = useState('medium');
   const [notifications, setNotifications] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
+  const [soundEffects, setSoundEffects]   = useState(true);
+  const [autoSave, setAutoSave]           = useState(true);
 
   return (
     <Dialog>
@@ -62,7 +40,7 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
           <p className="text-sm text-muted-foreground">Customize your LegalCareAI experience</p>
         </DialogHeader>
         <div className="space-y-1 py-2">
-          {/* Appearance Section */}
+          {/* Appearance */}
           <div className="space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Appearance</h3>
             <div className="space-y-3 rounded-lg border border-border p-4">
@@ -83,9 +61,7 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
                     <p className="text-xs text-muted-foreground">Adjust text size across the app</p>
                   </div>
                   <Select value={fontSize} onValueChange={setFontSize}>
-                    <SelectTrigger className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="small">Small</SelectItem>
                       <SelectItem value="medium">Medium</SelectItem>
@@ -97,22 +73,19 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
             </div>
           </div>
 
-          {/* Language Section */}
+          {/* Language */}
           <div className="space-y-4 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Language & Region</h3>
             <div className="space-y-3 rounded-lg border border-border p-4">
               <div>
                 <Label className="flex items-center gap-2 text-sm font-medium">
-                  <Globe size={16} className="text-primary" />
-                  Language
+                  <Globe size={16} className="text-primary" />Language
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1 mb-2">Voice input and AI responses will use this language</p>
                 <Select value={currentLanguage.code} onValueChange={setLanguage}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {availableLanguages.map((lang) => (
+                    {availableLanguages.map(lang => (
                       <SelectItem key={lang.code} value={lang.code}>
                         {lang.nativeName} ({lang.name})
                       </SelectItem>
@@ -123,7 +96,7 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
             </div>
           </div>
 
-          {/* Notifications Section */}
+          {/* Notifications */}
           <div className="space-y-4 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Notifications & Sounds</h3>
             <div className="space-y-3 rounded-lg border border-border p-4">
@@ -160,7 +133,7 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
             </div>
           </div>
 
-          {/* About Section */}
+          {/* About */}
           <div className="space-y-4 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">About</h3>
             <div className="rounded-lg border border-border p-4 space-y-2">
@@ -173,9 +146,7 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
                 <span className="font-medium">LegalCareAI</span>
               </div>
               <div className="border-t border-border pt-2 mt-2">
-                <p className="text-xs text-muted-foreground text-center">
-                  © 2025 LegalCareAI. All rights reserved.
-                </p>
+                <p className="text-xs text-muted-foreground text-center">© 2025 LegalCareAI. All rights reserved.</p>
               </div>
             </div>
           </div>
@@ -186,61 +157,32 @@ const SettingsDialog = ({ isCollapsed }: { isCollapsed: boolean }) => {
 };
 
 const AppSidebar = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const location    = useLocation();
+  const navigate    = useNavigate();
   const currentPath = location.pathname;
-  const { state } = useSidebar();
+  const { state }   = useSidebar();
   const isCollapsed = state === 'collapsed';
-  
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setUser(session?.user ?? null);
-        setIsLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user, signOut, isLoading } = useAuth();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    toast.success('Signed out successfully');
-    navigate('/');
+    await signOut();
   };
 
   const handleAIAssistantClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    // Force page reload to reset chat state
     window.location.href = '/';
   };
 
-  const mainItems = [
-    { title: 'AI Assistant', icon: Home, href: '/', onClick: handleAIAssistantClick },
-  ];
-
+  const mainItems    = [{ title: 'AI Assistant', icon: Home, href: '/', onClick: handleAIAssistantClick }];
   const serviceItems = [
-    { title: 'Documents', icon: FileText, href: '/documents' },
-    { title: 'Lawyers', icon: Users, href: '/lawyers' },
-    { title: 'Tax Services', icon: Calculator, href: '/tax-services' },
-    { title: 'Discussion', icon: MessageSquare, href: '/discussion' },
-    { title: 'Community', icon: Globe, href: '/community' },
+    { title: 'Documents',   icon: FileText,    href: '/documents' },
+    { title: 'Lawyers',     icon: Users,       href: '/lawyers' },
+    { title: 'Tax Services',icon: Calculator,  href: '/tax-services' },
+    { title: 'Discussion',  icon: MessageSquare, href: '/discussion' },
+    { title: 'Community',   icon: Globe,       href: '/community' },
   ];
-
-  // Dashboard items - only shown when logged in
-  const dashboardItems = [
-    { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  ];
+  const dashboardItems = [{ title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' }];
 
   const userInitials = user?.email?.slice(0, 2).toUpperCase() || 'U';
 
@@ -259,29 +201,17 @@ const AppSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent className="px-2">
-        {/* Main Navigation */}
+        {/* Main nav */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs text-muted-foreground px-2">
-            {!isCollapsed && 'MAIN'}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className="text-xs text-muted-foreground px-2">{!isCollapsed && 'MAIN'}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {mainItems.map(item => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={currentPath === item.href}
-                    className="hover:bg-sidebar-accent"
-                  >
-                    <a 
-                      href={item.href} 
-                      onClick={item.onClick}
-                      className="flex items-center gap-3"
-                    >
+                  <SidebarMenuButton asChild isActive={currentPath === item.href} className="hover:bg-sidebar-accent">
+                    <a href={item.href} onClick={item.onClick} className="flex items-center gap-3">
                       <item.icon size={18} className="text-muted-foreground" />
-                      {!isCollapsed && (
-                        <span className="text-sm">{item.title}</span>
-                      )}
+                      {!isCollapsed && <span className="text-sm">{item.title}</span>}
                     </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -290,26 +220,18 @@ const AppSidebar = () => {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* User Dashboard - Only visible when logged in */}
-        {user && (
+        {/* Dashboard — only when logged in */}
+        {!isLoading && user && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-xs text-muted-foreground px-2">
-              {!isCollapsed && 'MY ACCOUNT'}
-            </SidebarGroupLabel>
+            <SidebarGroupLabel className="text-xs text-muted-foreground px-2">{!isCollapsed && 'MY ACCOUNT'}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {dashboardItems.map((item) => (
+                {dashboardItems.map(item => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
-                      asChild 
-                      isActive={currentPath === item.href || currentPath.startsWith('/dashboard')}
-                      className="hover:bg-sidebar-accent"
-                    >
+                    <SidebarMenuButton asChild isActive={currentPath.startsWith('/dashboard')} className="hover:bg-sidebar-accent">
                       <Link to={item.href} className="flex items-center gap-3">
                         <item.icon size={18} className="text-primary" />
-                        {!isCollapsed && (
-                          <span className="text-sm font-medium">{item.title}</span>
-                        )}
+                        {!isCollapsed && <span className="text-sm font-medium">{item.title}</span>}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -321,23 +243,15 @@ const AppSidebar = () => {
 
         {/* Services */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs text-muted-foreground px-2">
-            {!isCollapsed && 'SERVICES'}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className="text-xs text-muted-foreground px-2">{!isCollapsed && 'SERVICES'}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {serviceItems.map((item) => (
+              {serviceItems.map(item => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={currentPath === item.href}
-                    className="hover:bg-sidebar-accent"
-                  >
+                  <SidebarMenuButton asChild isActive={currentPath === item.href} className="hover:bg-sidebar-accent">
                     <Link to={item.href} className="flex items-center gap-3">
                       <item.icon size={18} className="text-muted-foreground" />
-                      {!isCollapsed && (
-                        <span className="text-sm">{item.title}</span>
-                      )}
+                      {!isCollapsed && <span className="text-sm">{item.title}</span>}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -349,48 +263,36 @@ const AppSidebar = () => {
 
       <SidebarFooter className="p-3">
         <SidebarMenu>
-          {/* User info when logged in */}
           {user && !isCollapsed && (
             <div className="flex items-center gap-3 px-2 py-2 mb-2 rounded-lg bg-sidebar-accent/50">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {userInitials}
-                </AvatarFallback>
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs">{userInitials}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">
-                  {user.email}
-                </p>
+                <p className="text-xs font-medium text-foreground truncate">{user.email}</p>
                 <p className="text-[10px] text-muted-foreground">Logged in</p>
               </div>
             </div>
           )}
-          
+
           {user ? (
-            // Logged in: Show sign out
             <SidebarMenuItem>
-              <SidebarMenuButton 
-                onClick={handleSignOut}
-                className="hover:bg-destructive/10 hover:text-destructive"
-              >
+              <SidebarMenuButton onClick={handleSignOut} className="hover:bg-destructive/10 hover:text-destructive">
                 <LogOut size={18} className="text-muted-foreground" />
                 {!isCollapsed && <span className="text-sm">Sign Out</span>}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ) : (
-            // Not logged in: Show login
             <SidebarMenuItem>
               <SidebarMenuButton asChild className="hover:bg-sidebar-accent">
                 <Link to="/auth" className="flex items-center gap-3">
                   <LogIn size={18} className="text-muted-foreground" />
-                  {!isCollapsed && (
-                    <span className="text-sm">Login / Sign Up</span>
-                  )}
+                  {!isCollapsed && <span className="text-sm">Login / Sign Up</span>}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
-          
+
           <SidebarMenuItem>
             <SettingsDialog isCollapsed={isCollapsed} />
           </SidebarMenuItem>

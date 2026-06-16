@@ -16,12 +16,15 @@ export const LanguageProvider = ({ children }: { children: ReactNode }) => {
     getLanguageByCode(DEFAULT_LANGUAGE)
   );
 
-  // Load saved language preference on mount
+  // Load saved language preference on mount.
+  // Note: the language selector controls the FALLBACK when auto-detection can't identify the
+  // script.  Chat language is primarily auto-detected from the user's typed/spoken content.
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && SUPPORTED_LANGUAGES[saved]) {
       setCurrentLanguage(getLanguageByCode(saved));
     }
+    // If nothing was saved, or the saved value is no longer valid, stay on en-IN (the default)
   }, []);
 
   const setLanguage = (code: string) => {

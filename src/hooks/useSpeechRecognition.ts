@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { isMobileDevice } from './useMobileAudio';
+import { detectLanguageFromText } from '@/lib/languageDetection';
 
 interface SpeechRecognitionHook {
   isListening: boolean;
@@ -56,35 +57,8 @@ declare global {
   }
 }
 
-// Indian language detection patterns based on Unicode script ranges
-const detectIndianLanguage = (text: string): string => {
-  // Check for Devanagari (Hindi, Marathi)
-  const devanagariCount = (text.match(/[\u0900-\u097F]/g) || []).length;
-  const latinCount = (text.match(/[a-zA-Z]/g) || []).length;
-  
-  // If significant Devanagari, it's Hindi
-  if (devanagariCount > 0 && devanagariCount >= latinCount * 0.3) {
-    return 'hi-IN';
-  }
-  
-  // Check other Indian scripts
-  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'; // Tamil
-  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'; // Telugu
-  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'; // Kannada
-  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'; // Malayalam
-  if (/[\u0980-\u09FF]/.test(text)) return 'bn-IN'; // Bengali/Assamese
-  if (/[\u0A80-\u0AFF]/.test(text)) return 'gu-IN'; // Gujarati
-  if (/[\u0A00-\u0A7F]/.test(text)) return 'pa-IN'; // Punjabi (Gurmukhi)
-  if (/[\u0B00-\u0B7F]/.test(text)) return 'or-IN'; // Odia
-  
-  // Check for Hinglish (Hindi words in Roman script)
-  const hinglishPatterns = /\b(kya|hai|hain|nahi|aur|mein|toh|kaise|kyun|kab|kaun|kaha|ho|kar|raha|rahe|tha|thi|the|mujhe|tumhe|aap|tum|yeh|woh|kuch|bahut|accha|theek|abhi|phir)\b/i;
-  if (hinglishPatterns.test(text)) {
-    return 'hinglish';
-  }
-  
-  return 'en-IN';
-};
+// Language detection is handled by the shared utility in @/lib/languageDetection.
+// It covers Unicode scripts + romanized Tamil, Telugu, Kannada, Malayalam, Hinglish.
 
 export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognitionHook => {
   const [isListening, setIsListening] = useState(false);
@@ -127,8 +101,13 @@ export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognit
       // Set the recognition language to match the user's selected language
       // This ensures the browser transcribes in the correct language/script
       if (preferredLanguage && preferredLanguage !== 'en-IN') {
-        recognition.lang = preferredLanguage;
-        console.log('Speech recognition language set to:', preferredLanguage);
+        // Handle custom codes
+        if (preferredLanguage === 'hinglish') {
+           recognition.lang = 'hi-IN'; // Fallback to Hindi for Hinglish
+        } else {
+           recognition.lang = preferredLanguage;
+        }
+        console.log('Speech recognition language set to:', recognition.lang);
       } else {
         // Default: let browser auto-detect
         recognition.lang = 'en-IN';
@@ -178,7 +157,8 @@ export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognit
         }
 
         if (fullTranscript) {
-          setDetectedLanguage(detectIndianLanguage(fullTranscript));
+          // Use shared detector — handles Unicode scripts + romanized Tamil/Telugu/Kannada/Malayalam/Hinglish
+          setDetectedLanguage(detectLanguageFromText(fullTranscript, 'en-IN'));
         }
 
         setTranscript(fullTranscript);

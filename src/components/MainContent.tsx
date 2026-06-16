@@ -6,6 +6,7 @@ import ChatMessages from './ChatMessages';
 import { useLegalChat } from '@/hooks/useLegalChat';
 import { useOpenAITTS } from '@/hooks/useOpenAITTS';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { resolveMessageLanguage } from '@/lib/languageDetection';
 import supremeCourtBg from '@/assets/supreme-court-bg.jpg';
 
 interface MainContentProps {
@@ -50,7 +51,10 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
     if (isSpeaking) {
       stop();
     }
-    await sendMessage(message, currentLanguage.code, documentContent);
+    // Auto-detect the language from what the user actually typed.
+    // Falls back to the sidebar language selector if nothing is detected.
+    const resolvedLang = resolveMessageLanguage(message, currentLanguage.code);
+    await sendMessage(message, resolvedLang, documentContent);
   }, [sendMessage, isSpeaking, stop, currentLanguage.code]);
 
   const handleDocumentUpload = useCallback(async (documentContent: string, documentName: string) => {
@@ -89,14 +93,14 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
         <>
           {/* Scrollable messages area */}
           <div className="flex-1 overflow-y-auto min-h-0 pb-4">
-            <div className="max-w-3xl mx-auto w-full px-4 pt-4">
+            <div className="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 sm:px-8 pt-4">
               <ChatMessages messages={messages} isLoading={isLoading} />
             </div>
           </div>
-          
+
           {/* Fixed input at bottom */}
           <div className="flex-shrink-0 w-full bg-gradient-to-t from-background via-background/95 to-transparent pt-4 pb-6">
-            <div className="max-w-3xl mx-auto w-full px-4">
+            <div className="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 sm:px-8">
               <ChatInput
                 onSend={handleSendMessage}
                 onDocumentUpload={handleDocumentUpload}
@@ -112,15 +116,15 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
         </>
       ) : (
         // Initial orb mode - centered
-        <div className="flex-1 flex flex-col items-center justify-center px-4">
-          <div className="flex flex-col items-center gap-8 md:gap-10 animate-fade-in w-full max-w-2xl">
-            <AiOrb 
+        <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-10 lg:px-16 py-8">
+          <div className="flex flex-col items-center gap-12 md:gap-16 lg:gap-20 animate-fade-in w-full max-w-6xl xl:max-w-7xl">
+            <AiOrb
               onTranscript={handleVoiceTranscript}
               isProcessing={isLoading}
               responseText={lastVoiceResponse}
               responseLanguage={lastResponseLanguage}
             />
-            <div className="w-full max-w-3xl">
+            <div className="w-full">
               <ChatInput
                 onSend={handleSendMessage}
                 onDocumentUpload={handleDocumentUpload}
