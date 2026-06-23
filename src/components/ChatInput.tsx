@@ -451,7 +451,10 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder={placeholder}
-          disabled={isLoading || isSpeaking}
+          // Group 6: allow typing while the AI is speaking. `message` is independent
+          // of the voice transcript, so text + voice can be active simultaneously.
+          // Only block typing while a request is in flight.
+          disabled={isLoading}
           className={`w-full ${voiceMode ? 'pl-12' : 'pl-12 sm:pl-14 lg:pl-16'} py-3 sm:py-3.5 lg:py-4 pr-24 sm:pr-28 lg:pr-32 rounded-full bg-secondary border-2 shadow-xl ${
             isSpeaking
               ? 'border-primary/50'

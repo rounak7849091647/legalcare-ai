@@ -146,6 +146,14 @@ const COURTROOM_VOICE_CONFIG = {
   },
 };
 
+// Role discipline for the AI Judge. Without this the model often makes the judge
+// address ITSELF as "Your Honour" — that phrase belongs to lawyers/parties speaking
+// TO the judge, never to the judge speaking. Injected into every judge prompt.
+const JUDGE_SPEECH_RULES = `JUDGE SPEECH RULES (strict):
+- You ARE the judge. NEVER refer to yourself as "Your Honour", "Your Lordship", or "My Lord" — those are how lawyers address you, not how you speak.
+- Speak with the authority of the bench. Use phrases such as: "Counsel, proceed.", "The court will consider the evidence.", "Objection sustained.", "Objection overruled.", "Please continue your argument.", "This court finds...", "The bench notes...".
+- Address the lawyers as "Counsel", "the Prosecution", or "the Defense" — never as "Your Honour".`;
+
 const synthWithGoogle = async (input, language, voiceOverride, tuningOverride) => {
   const voice = voiceOverride || GOOGLE_VOICE_MAP[language] || GOOGLE_VOICE_MAP['en-IN'];
   const tuning = tuningOverride || VOICE_TUNING[voice.languageCode] || DEFAULT_TUNING;
@@ -472,7 +480,14 @@ const getLanguageInstructions = (lang) => {
     'zh-CN': 'Reply ONLY in Chinese (Simplified) (简体中文).',
     'ar-SA': 'Reply ONLY in Arabic (العربية).',
   };
-  return langMap[lang] || 'Reply ONLY in English. Do NOT use Hindi or Hinglish.';
+  const base = langMap[lang] || 'Reply ONLY in English. Do NOT use Hindi or Hinglish.';
+  // Hinglish is intentionally mixed — every other language gets a strict
+  // no-drift / finish-completely clause. This stops Punjabi drifting into Hindi,
+  // Hindi drifting into Hinglish, and answers ending before the last sentence.
+  if (lang === 'hinglish') return base;
+  return `${base}
+
+LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.`;
 };
 
 // 1. Chat Endpoint — alias to /functions/v1/legal-chat
@@ -620,7 +635,9 @@ app.post('/functions/v1/courtroom-ai', async (req, res) => {
         'ur-IN': 'Respond entirely in Urdu (اردو script). Use formal legal Urdu terminology.',
         'hi-EN': 'Respond in Hinglish (Hindi words written in English/Roman script mixed with English).',
       };
-      return langMap[lang] || 'Respond in English. Use clear legal English terminology.';
+      const base = langMap[lang] || 'Respond in English. Use clear legal English terminology.';
+      if (lang === 'hi-EN' || !langMap[lang]) return base;
+      return `${base} LANGUAGE LOCK: Keep the ENTIRE statement in this one language from first word to last — never switch to Hindi or English partway, and finish every sentence completely.`;
     };
 
     const callAI = async (messages, maxTokens = 1500) => {
@@ -720,16 +737,18 @@ ${docContent}`
 
       const config = phasePrompts[phase] || { speaker: 'Judge', prompt: 'You are the AI Judge. Provide a brief neutral update on the state of the court proceedings. 2-3 sentences.' };
 
+      const roleRules = config.speaker === 'Judge' ? `\n\n${JUDGE_SPEECH_RULES}` : '';
+
       const content = await callAI([
         {
           role: 'system',
-          content: `${config.prompt}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown formatting. Write in plain conversational court language. Stay strictly within Indian legal framework.`
+          content: `${config.prompt}${roleRules}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown formatting. Write in plain conversational court language. Stay strictly within Indian legal framework.`
         },
         {
           role: 'user',
           content: `Proceed with the ${(phase || '').replace(/_/g, ' ')} phase of this courtroom hearing.`
         }
-      ], 800);
+      ], 1200);
 
       return res.json({ speaker: config.speaker, phase, content: stripMarkdown(content) });
     }
@@ -745,10 +764,10 @@ ${docContent}`
       const judgeContent = await callAI([
         {
           role: 'system',
-          content: `You are the AI Judge in an Indian courtroom. The ${userRole === 'complainant' ? 'complainant' : 'accused'} (acting as their own lawyer) has just presented this argument: "${userMsg}". Acknowledge the argument, briefly evaluate its legal merit, and formally direct the ${opponentRole} to respond. Be neutral and formal. 3-5 sentences.\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only.`
+          content: `You are the AI Judge in an Indian courtroom. The ${userRole === 'complainant' ? 'complainant' : 'accused'} (acting as their own lawyer) has just presented this argument: "${userMsg}". Acknowledge the argument, briefly evaluate its legal merit, and formally direct the ${opponentRole} to respond. Be neutral and formal. 3-5 sentences.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only.`
         },
         { role: 'user', content: "Respond to the user's argument as the judge." }
-      ], 600);
+      ], 900);
 
       const rebuttalContent = await callAI([
         {
@@ -756,7 +775,7 @@ ${docContent}`
           content: `You are the ${opponentRole} in an Indian courtroom. The opposing party just argued: "${userMsg}". The judge has acknowledged it. Now deliver a strong, evidence-based rebuttal. Challenge their points using law, evidence, and logic. 4-6 sentences.\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nJudge's response: ${judgeContent}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only.`
         },
         { role: 'user', content: "Deliver your rebuttal to the user's argument." }
-      ], 600);
+      ], 900);
 
       const cleanJudge    = stripMarkdown(judgeContent);
       const cleanRebuttal = stripMarkdown(rebuttalContent);
@@ -781,7 +800,7 @@ ${docContent}`
       const content = await callAI([
         {
           role: 'system',
-          content: `You are an AI Judge delivering a final judgment in an Indian courtroom simulation. The user acted as their own lawyer. You must be completely neutral and base your judgment strictly on law, evidence, and logical reasoning.\n\n${langInstruction}\n\nStructure your judgment as follows (use plain text, no markdown):\n\nCASE SUMMARY:\n[2-3 sentences summarizing the case]\n\nLEGAL ANALYSIS:\n[Analysis of the legal issues and applicable laws]\n\nEVALUATION OF ARGUMENTS:\n[Assessment of arguments presented by the user and the AI opponent lawyer]\n\nEVALUATION OF EVIDENCE:\n[Assessment of evidence presented by both sides]\n\nAPPLICATION OF LAW:\n[How the relevant laws apply to the facts]\n\nREASONING:\n[Your logical reasoning for the decision]\n\nFINAL DECISION:\n[Clear statement of the judgment]\n\nSUGGESTED NEXT STEPS:\n[2-3 practical steps for the parties]\n\nCase Analysis: ${analysis}\n\nFull proceedings:\n${allArgs}\n\nIMPORTANT: Be fair, neutral, and thorough. Do not fabricate legal sections.`
+          content: `You are an AI Judge delivering a final judgment in an Indian courtroom simulation. The user acted as their own lawyer. You must be completely neutral and base your judgment strictly on law, evidence, and logical reasoning.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nStructure your judgment as follows (use plain text, no markdown):\n\nCASE SUMMARY:\n[2-3 sentences summarizing the case]\n\nLEGAL ANALYSIS:\n[Analysis of the legal issues and applicable laws]\n\nEVALUATION OF ARGUMENTS:\n[Assessment of arguments presented by the user and the AI opponent lawyer]\n\nEVALUATION OF EVIDENCE:\n[Assessment of evidence presented by both sides]\n\nAPPLICATION OF LAW:\n[How the relevant laws apply to the facts]\n\nREASONING:\n[Your logical reasoning for the decision]\n\nFINAL DECISION:\n[Clear statement of the judgment]\n\nSUGGESTED NEXT STEPS:\n[2-3 practical steps for the parties]\n\nCase Analysis: ${analysis}\n\nFull proceedings:\n${allArgs}\n\nIMPORTANT: Be fair, neutral, and thorough. Do not fabricate legal sections.`
         },
         { role: 'user', content: 'Deliver the final judgment for this case.' }
       ], 2500);
@@ -811,7 +830,7 @@ app.post('/functions/v1/legal-chat', async (req, res) => {
           { role: 'system', content: `${langInstr}\n\nYou are an Indian legal assistant. Summarize the user's legal document in clear, simple language. Highlight key parties, claims, dates, legal sections, and any deadlines or risks.\n\nCRITICAL: Your ENTIRE response MUST be written in the language specified above. Do not switch languages mid-answer. Do not respond in English unless English was explicitly requested.` },
           { role: 'user', content: `Summarize this document:\n\n${(documentContent || '').slice(0, 60000)}` }
         ],
-        max_tokens: 600,
+        max_tokens: 1200,
         temperature: 0.3,
       });
       return res.json({ response: stripMarkdown(completion.choices[0]?.message?.content || ''), language: detectedLanguage });
@@ -878,7 +897,10 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
         const completion = await grok.chat.completions.create({
           model: GROK_MODEL,
           messages,
-          max_tokens: 500,
+          // Non-Latin scripts (Tamil/Telugu/Bengali/Marathi/Punjabi/Hindi) consume
+          // ~3-4x more tokens per word than English. 500 truncated them mid-sentence.
+          // 1500 lets a full answer complete in any supported script.
+          max_tokens: 1500,
           temperature: 0.4,
           stream: true,
         });
@@ -902,7 +924,8 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     const completion = await grok.chat.completions.create({
       model: GROK_MODEL,
       messages,
-      max_tokens: 500,
+      // See note above: 1500 prevents non-Latin-script answers from truncating.
+      max_tokens: 1500,
       temperature: 0.4,
     });
 
