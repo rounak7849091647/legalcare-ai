@@ -66,6 +66,11 @@ export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognit
   const [detectedLanguage, setDetectedLanguage] = useState('en-IN');
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Keep the selected language in a ref so recognition.lang and response routing
+  // always use the CURRENT selection (startListening is memoized, so reading the
+  // prop directly would use a stale value from first mount).
+  const preferredLangRef = useRef<string | undefined>(preferredLanguage);
+  useEffect(() => { preferredLangRef.current = preferredLanguage; }, [preferredLanguage]);
 
   const isSupported = typeof window !== 'undefined' && 
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
@@ -100,12 +105,13 @@ export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognit
       
       // Set the recognition language to match the user's selected language
       // This ensures the browser transcribes in the correct language/script
-      if (preferredLanguage && preferredLanguage !== 'en-IN') {
+      const sel = preferredLangRef.current;
+      if (sel && sel !== 'en-IN') {
         // Handle custom codes
-        if (preferredLanguage === 'hinglish') {
-           recognition.lang = 'hi-IN'; // Fallback to Hindi for Hinglish
+        if (sel === 'hinglish') {
+           recognition.lang = 'hi-IN'; // Hinglish is transcribed with the Hindi model
         } else {
-           recognition.lang = preferredLanguage;
+           recognition.lang = sel;
         }
         console.log('Speech recognition language set to:', recognition.lang);
       } else {
@@ -157,8 +163,18 @@ export const useSpeechRecognition = (preferredLanguage?: string): SpeechRecognit
         }
 
         if (fullTranscript) {
-          // Use shared detector — handles Unicode scripts + romanized Tamil/Telugu/Kannada/Malayalam/Hinglish
-          setDetectedLanguage(detectLanguageFromText(fullTranscript, 'en-IN'));
+          // Language routing for voice:
+          // If the user selected a specific language, the recognizer was told to
+          // transcribe in THAT language — trust it. Re-detecting the transcript is
+          // what turned Telugu/Bengali speech into Hindi (the browser approximates
+          // unfamiliar sounds in the wrong script). Only auto-detect when the
+          // selection is en-IN/auto, where the user may mix English/Hinglish/regional.
+          const sel = preferredLangRef.current;
+          if (sel && sel !== 'en-IN') {
+            setDetectedLanguage(sel);
+          } else {
+            setDetectedLanguage(detectLanguageFromText(fullTranscript, 'en-IN'));
+          }
         }
 
         setTranscript(fullTranscript);

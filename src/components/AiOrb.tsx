@@ -71,7 +71,10 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
 
   const isListening = useNativeSpeech ? webIsListening : isRecording;
   const transcript = useNativeSpeech ? webTranscript : whisperTranscript;
-  const detectedLanguage = useNativeSpeech ? webDetectedLanguage : (isIOS ? 'en-IN' : 'en-IN'); 
+  // Native path: language from the recognizer (which now trusts the selection).
+  // Whisper path: don't hard-code en-IN (that made Telugu/Bengali speakers get
+  // English/Hindi) — route to the user's selected language.
+  const detectedLanguage = useNativeSpeech ? webDetectedLanguage : currentLanguage.code;
   const speechSupported = useNativeSpeech ? webSpeechSupported : whisperSupported;
   const speechError = useNativeSpeech ? webSpeechError : whisperError;
 

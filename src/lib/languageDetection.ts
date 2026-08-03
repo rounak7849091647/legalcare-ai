@@ -43,7 +43,11 @@ const RE_MARATHI = /(?<![\u0900-\u097F])(\u0906\u0939\u0947|\u0906\u0939\u0947\u
 const RE_TANGLISH = /\b(naan|enna|enakku|enaku|unakku|ungaluku|ungalukku|vanakkam|sollu|theriyum|theriyala|illai|ille|inge|adhu|ithu|avar|aval|avan|romba|konjam|paaru|seri|solren|kaanom|kanom|kudukka|pondati|machaan|machan|yenna|epdi|eppo|enga|yenge|ippo|innum|apram|kooda|maatom|matten|vendaam|vendam|venum|vendum|pannu|panna|irukku|mudiyadhu|mudinjichu|therila|theriyala|aama|aamaa|illa|nandri|poitu|poren|varren|iruken|irukken|paakalam|pakalaam|solla|vittu|paathuko|pathuko|theiyum|avaluku|avanuku|avanga|inga|anga|rombha)\b/i;
 
 // Words that are DISTINCTLY Telugu romanized.
-const RE_TELUGU_ROMAN = /\b(nenu|meeru|meru|ela|cheppandi|undi|ledu|chestanu|unna|kadu|evadu|evare|emundi|em|oka|anni|chala|chestam|ante|aithe|naaku|meeru|memu|mee|ee|aa|idi|adi|vachanu|vacham|poyanu|poyam|kaadu|kaaduuu|ledhu|undhi|cheyyi|cheyyandi|okka|rendu|moodu|nalugu|ayidu|ardham|artham|chaduvutunna|padukunta|nidra|tinnanu|teestanu)\b/i;
+const RE_TELUGU_ROMAN = /\b(nenu|meeru|meru|ela|cheppandi|undi|ledu|chestanu|unna|kadu|evadu|evare|emundi|em|oka|anni|chala|chestam|ante|aithe|naa|naaku|kavali|kaavali|cheyali|cheyyali|ivvaledu|ivvu|memu|mee|ee|aa|idi|adi|vachanu|vacham|poyanu|poyam|kaadu|kaaduuu|ledhu|undhi|cheyyi|cheyyandi|okka|rendu|moodu|nalugu|ayidu|ardham|artham|chaduvutunna|padukunta|nidra|tinnanu|teestanu)\b/i;
+
+// Words that are DISTINCTLY Bengali romanized. Chosen to avoid English/Hindi
+// collisions (previously romanized Bengali fell through to English).
+const RE_BENGALI_ROMAN = /\b(ami|tumi|apni|amar|tomar|apnar|amake|tomake|korbo|korchi|korte|korle|kori|kore|kobe|keno|kothay|kemon|bhalo|kharap|dorkar|deyni|deben|dilo|nei|ache|acche|hobe|hocche|kintu|tahole|ekhon|khub|bolchi|bolo|bolun|jani|janina|parbo|parina|chai|chaina|amader|tomader|onek|kichu)\b/i;
 
 // Words that are DISTINCTLY Kannada romanized.
 const RE_KANNADA_ROMAN = /\b(naanu|neevu|avaru|avalu|avanu|enu|hege|yaake|yavaga|yalli|idu|adu|maadbeku|maadbedi|hogbeku|hogbedi|barthini|barthare|aithu|agalla|beku|beda|sari|hogona|bartini|heli|helkodtini|gottu|gottilla|nodi|nodona|madona|kelsa|manege|oota|nidde|baduku)\b/i;
@@ -109,6 +113,7 @@ export const detectLanguageFromText = (text: string, fallback = 'en-IN'): string
   if (RE_TELUGU_ROMAN.test(text))   return 'te-IN';
   if (RE_KANNADA_ROMAN.test(text))  return 'kn-IN';
   if (RE_MALAYALAM_ROMAN.test(text)) return 'ml-IN';
+  if (RE_BENGALI_ROMAN.test(text))  return 'bn-IN';
 
   // ── Step 3: Hinglish (Hindi in Latin script) ───────────────────────────────
   // One STRONG (unambiguously Hindi) word, OR two distinct GENERAL words.
