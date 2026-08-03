@@ -98,9 +98,10 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
             </div>
           </div>
 
-          {/* Fixed input at bottom */}
+          {/* Fixed input at bottom — narrower, centered composer (~80% on md+,
+              full-width on mobile for usability, capped so it never over-stretches) */}
           <div className="flex-shrink-0 w-full bg-gradient-to-t from-background via-background/95 to-transparent pt-4 pb-6">
-            <div className="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 sm:px-8">
+            <div className="w-full md:w-4/5 max-w-4xl mx-auto px-4 sm:px-8">
               <ChatInput
                 onSend={handleSendMessage}
                 onDocumentUpload={handleDocumentUpload}
@@ -127,7 +128,7 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
               onStopSpeaking={stop}
               isTTSLoading={isTTSLoading}
             />
-            <div className="w-full">
+            <div className="w-full md:w-4/5 max-w-4xl mx-auto">
               <ChatInput
                 onSend={handleSendMessage}
                 onDocumentUpload={handleDocumentUpload}
