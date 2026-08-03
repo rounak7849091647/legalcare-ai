@@ -472,6 +472,7 @@ const getLanguageInstructions = (lang) => {
     'ml-IN':    'Reply ONLY in Malayalam (മലയാളം). Do NOT use any other language.',
     'pa-IN':    'Reply ONLY in Punjabi (ਪੰਜਾਬੀ). Do NOT use any other language.',
     'or-IN':    'Reply ONLY in Odia (ଓଡ଼ିଆ). Do NOT use any other language.',
+    'as-IN':    'Reply ONLY in Assamese (অসমীয়া). Do NOT use any other language.',
     'ur-IN':    'Reply ONLY in Urdu (اردو). Do NOT use any other language.',
     // ── International ───────────────────────────────────────────────────────
     'es-ES': 'Reply ONLY in Spanish (Español).',
@@ -489,10 +490,16 @@ const getLanguageInstructions = (lang) => {
   // Hinglish is intentionally mixed — every other language gets a strict
   // no-drift / finish-completely clause. This stops Punjabi drifting into Hindi,
   // Hindi drifting into Hinglish, and answers ending before the last sentence.
-  if (lang === 'hinglish') return base;
+  // Anti-refusal is CRITICAL and applies to EVERY language (including Hinglish):
+  // the model must never reject the user or demand they rewrite their question.
+  const antiRefusal = `
+
+NEVER REFUSE: You can READ and UNDERSTAND the user's question no matter what language or script they typed it in (Assamese, Odia, Bengali, Tamil, etc.). ALWAYS answer their actual question. Do NOT say "I can only respond in X", do NOT ask them to rewrite their question in another language, and do NOT reject the message. Just understand it and reply helpfully.`;
+
+  if (lang === 'hinglish') return base + antiRefusal;
   return `${base}
 
-LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.`;
+LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.${antiRefusal}`;
 };
 
 // 1. Chat Endpoint — alias to /functions/v1/legal-chat

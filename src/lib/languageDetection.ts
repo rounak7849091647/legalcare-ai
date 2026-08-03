@@ -25,6 +25,9 @@ const RE_TELUGU      = /[\u0C00-\u0C7F]/;
 const RE_KANNADA     = /[\u0C80-\u0CFF]/;
 const RE_MALAYALAM   = /[\u0D00-\u0D7F]/;
 const RE_BENGALI     = /[\u0980-\u09FF]/;
+// Assamese shares the Bengali script but uses two letters Bengali does not:
+// \u09F0 (U+09F0) and \u09F1 (U+09F1). Their presence marks the text as Assamese.
+const RE_ASSAMESE    = /[\u09F0\u09F1]/;
 const RE_GUJARATI    = /[\u0A80-\u0AFF]/;
 const RE_GURMUKHI    = /[\u0A00-\u0A7F]/; // Punjabi
 const RE_ODIA        = /[\u0B00-\u0B7F]/;
@@ -102,6 +105,7 @@ export const detectLanguageFromText = (text: string, fallback = 'en-IN'): string
   if (RE_TELUGU.test(text))    return 'te-IN';
   if (RE_KANNADA.test(text))   return 'kn-IN';
   if (RE_MALAYALAM.test(text)) return 'ml-IN';
+  if (RE_ASSAMESE.test(text))  return 'as-IN'; // Assamese-only letters ৰ/ৱ (check before Bengali)
   if (RE_BENGALI.test(text))   return 'bn-IN';
   if (RE_GUJARATI.test(text))  return 'gu-IN';
   if (RE_GURMUKHI.test(text))  return 'pa-IN';
