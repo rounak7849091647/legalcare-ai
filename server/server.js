@@ -102,7 +102,12 @@ const GOOGLE_VOICE_MAP = {
   'mr-IN': { languageCode: 'mr-IN', name: 'mr-IN-Chirp3-HD-Aoede', ssmlGender: 'FEMALE' }, // Marathi Chirp3-HD
   'pa-IN': { languageCode: 'pa-IN', name: 'pa-IN-Chirp3-HD-Aoede', ssmlGender: 'FEMALE' }, // Punjabi Chirp3-HD
   'ur-IN': { languageCode: 'ur-IN', name: 'ur-IN-Chirp3-HD-Aoede', ssmlGender: 'FEMALE' }, // Urdu Chirp3-HD
-  'or-IN': { languageCode: 'or-IN', name: 'or-IN-Standard-A',     ssmlGender: 'FEMALE' },  // Odia: Standard only (no Chirp3 yet)
+  // Google TTS has NO Odia or Assamese voice. Bengali is the closest relative and
+  // renders both scripts intelligibly (verified: returns valid audio), so we route
+  // them to the Bengali Chirp3-HD voice instead of erroring (or-IN-Standard-A does
+  // not exist → 500) or mispronouncing with the English fallback voice.
+  'or-IN': { languageCode: 'bn-IN', name: 'bn-IN-Chirp3-HD-Aoede', ssmlGender: 'FEMALE' }, // Odia → Bengali voice (no native Odia voice)
+  'as-IN': { languageCode: 'bn-IN', name: 'bn-IN-Chirp3-HD-Aoede', ssmlGender: 'FEMALE' }, // Assamese → Bengali voice (near-identical script)
 };
 
 // Detect whether a voice supports SSML. Chirp3-HD voices DO NOT support SSML —

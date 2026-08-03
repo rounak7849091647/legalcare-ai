@@ -29,6 +29,14 @@ const RE_GUJARATI    = /[\u0A80-\u0AFF]/;
 const RE_GURMUKHI    = /[\u0A00-\u0A7F]/; // Punjabi
 const RE_ODIA        = /[\u0B00-\u0B7F]/;
 
+// Marathi shares the Devanagari script with Hindi, so script alone can't tell them
+// apart. These are Marathi-DISTINCTIVE words that Hindi does not use (Hindi uses
+// different words: aur->aani, mujhe->mala, chahiye->pahije, kya->kaay, nahi->naahi).
+// Devanagari boundaries (lookbehind/ahead) stop them matching inside Hindi words
+// (e.g. kaay must not match inside kaayam/kaayda). Words that ARE valid Hindi
+// (kele=bananas, hote/hoti) are deliberately excluded.
+const RE_MARATHI = /(?<![\u0900-\u097F])(\u0906\u0939\u0947|\u0906\u0939\u0947\u0924|\u0906\u0923\u093F|\u092E\u0932\u093E|\u0924\u0941\u0932\u093E|\u0924\u094D\u092F\u093E\u0932\u093E|\u0924\u093F\u0932\u093E|\u092A\u093E\u0939\u093F\u091C\u0947|\u092E\u094D\u0939\u0923\u091C\u0947|\u092E\u094D\u0939\u0923\u0942\u0928|\u0924\u0941\u092E\u094D\u0939\u0940|\u0906\u092E\u094D\u0939\u0940|\u0915\u093E\u092F|\u0928\u093E\u0939\u0940|\u0928\u093E\u0939\u0940\u0924|\u092E\u093E\u091D\u093E|\u092E\u093E\u091D\u0940|\u092E\u093E\u091D\u0947|\u092E\u093E\u091D\u094D\u092F\u093E|\u0924\u0941\u091D\u093E|\u0924\u0941\u091D\u0940|\u091D\u093E\u0932\u093E|\u091D\u093E\u0932\u0940|\u091D\u093E\u0932\u0947|\u0915\u0938\u0947|\u0915\u0936\u0940|\u0915\u0941\u0920\u0947|\u0915\u093F\u0924\u0940|\u0928\u0915\u094B|\u0906\u092A\u0923|\u0916\u0942\u092A|\u0939\u094B\u092F|\u0915\u0930\u093E\u092F\u091A\u0947|\u092A\u093E\u0939\u093F\u091C\u0947\u0924)(?![\u0900-\u097F])/;
+
 // ─── Romanized Pattern Sets ────────────────────────────────────────────────
 // Words that are DISTINCTLY Tamil romanized (Tanglish).  They don't overlap
 // with Hindi or English vocabulary.
@@ -78,6 +86,9 @@ export const detectLanguageFromText = (text: string, fallback = 'en-IN'): string
 
   // ── Step 1: Unicode script detection (highest confidence) ─────────────────
   if (RE_DEVANAGARI.test(text)) {
+    // Marathi ALSO uses Devanagari \u2014 disambiguate before assuming Hindi, otherwise
+    // Marathi speakers get answered in Hindi (the exact "auto-switch to Hindi" bug).
+    if (RE_MARATHI.test(text)) return 'mr-IN';
     // Mixed Devanagari+Latin = Hinglish; mostly Devanagari = Hindi
     const devCount  = (text.match(/[\u0900-\u097F]/g) || []).length;
     const latinCount = (text.match(/[a-zA-Z]/g)        || []).length;
