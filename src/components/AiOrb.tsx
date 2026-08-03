@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useWhisperRecognition } from '@/hooks/useWhisperRecognition';
-import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { isIOSDevice } from '@/lib/device/isIOSDevice';
 import { isMacDevice } from '@/lib/device/isMacDevice';
@@ -13,9 +12,14 @@ interface AiOrbProps {
   isProcessing?: boolean;
   responseText?: string;
   responseLanguage?: string;
+  // TTS state is owned by MainContent's single useOpenAITTS instance and passed
+  // down, so the app has exactly ONE speaker (no duplicate/overlapping audio).
+  isSpeaking?: boolean;
+  onStopSpeaking?: () => void;
+  isTTSLoading?: boolean;
 }
 
-const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLanguage = 'en-IN' }: AiOrbProps) => {
+const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLanguage = 'en-IN', isSpeaking = false, onStopSpeaking, isTTSLoading = false }: AiOrbProps) => {
   const [isActive, setIsActive] = useState(false);
   const [continuousMode, setContinuousMode] = useState(false); // CHANGED TO FALSE: Manual Tap Only
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
@@ -73,12 +77,13 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
 
   const resetTranscript = () => (useNativeSpeech ? resetWebTranscript() : resetWhisperTranscript());
 
-  const { isSpeaking, speak, stop: stopSpeaking, isSupported: ttsSupported, isLoading } = useTextToSpeech();
-  
+  // Single-speaker architecture: these come from MainContent's one TTS instance.
+  const stopSpeaking = onStopSpeaking ?? (() => {});
+  const isLoading = isTTSLoading;
+
   // Auto-send timer ref
   const autoSendTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTranscriptRef = useRef<string>('');
-  const hasSpokenRef = useRef<boolean>(false);
   const wasSpeakingRef = useRef<boolean>(false);
 
   // Clear timer on unmount
@@ -144,25 +149,12 @@ const AiOrb = ({ onTranscript, isProcessing = false, responseText, responseLangu
     }
   }, [isIOS, transcript, isListening, onTranscript, stopWebListening, resetTranscript, detectedLanguage, useNativeSpeech, responseText]);
 
-  // Auto-speak response when received (only after user interaction for mobile)
-  useEffect(() => {
-    if (responseText && !isProcessing && ttsSupported && !hasSpokenRef.current && hasUserInteracted) {
-      // CRITICAL FIX: Ensure we don't start listening immediately while speaking
-      // HARD LOCK: Stop listening immediately
-      if (isListening) {
-        if (useNativeSpeech) stopWebListening();
-        else stopRecording(); 
-        setIsActive(false);
-      }
-
-      hasSpokenRef.current = true;
-      speak(responseText, responseLanguage);
-    }
-    
-    if (isProcessing) {
-      hasSpokenRef.current = false;
-    }
-  }, [responseText, isProcessing, speak, ttsSupported, responseLanguage, hasUserInteracted, isListening, useNativeSpeech, stopWebListening, stopRecording]);
+  // NOTE: The orb no longer speaks. MainContent owns the single useOpenAITTS
+  // instance and auto-speaks every assistant response exactly once. Removing the
+  // duplicate speaker here is the root-cause fix for double/overlapping audio.
+  // The orb still reacts to speech via the shared `isSpeaking` prop and the
+  // global `ai-speech-started` event (now emitted by useOpenAITTS) to hard-stop
+  // the mic and prevent echo/feedback.
 
   // Continuous conversation: auto-start listening when speaking ends
   useEffect(() => {

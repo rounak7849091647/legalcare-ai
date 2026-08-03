@@ -123,6 +123,9 @@ const MainContent = ({ isMobile = false }: MainContentProps) => {
               isProcessing={isLoading}
               responseText={lastVoiceResponse}
               responseLanguage={lastResponseLanguage}
+              isSpeaking={isSpeaking}
+              onStopSpeaking={stop}
+              isTTSLoading={isTTSLoading}
             />
             <div className="w-full">
               <ChatInput

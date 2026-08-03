@@ -28,6 +28,22 @@ interface OpenAITTSHook {
   isLoading: boolean;
 }
 
+// Global speech signals — the SINGLE source of truth for "the AI is talking".
+// wavRecorder.ts reads window.isAITalking to drop mic audio (echo/feedback guard),
+// and AiOrb listens for these events to hard-stop the mic. Previously only
+// useTextToSpeech emitted these; now that useOpenAITTS is the app's one and only
+// speaker, it must emit them so those consumers keep working.
+const emitSpeechStarted = () => {
+  if (typeof window === 'undefined') return;
+  (window as any).isAITalking = true;
+  window.dispatchEvent(new CustomEvent('ai-speech-started'));
+};
+const emitSpeechStopped = () => {
+  if (typeof window === 'undefined') return;
+  (window as any).isAITalking = false;
+  window.dispatchEvent(new CustomEvent('ai-speech-stopped'));
+};
+
 export const useOpenAITTS = (): OpenAITTSHook => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +71,7 @@ export const useOpenAITTS = (): OpenAITTSHook => {
     }
     setIsSpeaking(false);
     setIsLoading(false);
+    emitSpeechStopped();
   }, [cleanupAudio]);
 
   const speak = useCallback(
@@ -119,11 +136,13 @@ export const useOpenAITTS = (): OpenAITTSHook => {
           source.onended = () => {
             setIsSpeaking(false);
             cleanupAudio();
+            emitSpeechStopped();
           };
 
           audioSourceRef.current = source;
           source.start(0);
           setIsSpeaking(true);
+          emitSpeechStarted();
         } catch (decodeError) {
           console.error('Audio decode error:', decodeError);
           fallbackSpeak(text, language);
@@ -154,5 +173,10 @@ function fallbackSpeak(text: string, language: string) {
   const voices = window.speechSynthesis.getVoices();
   const female = voices.find(v => v.lang.startsWith(language.slice(0, 2)) && /female|woman|samantha|victoria|kate|fiona|tessa|moira|karen/i.test(v.name));
   if (female) utterance.voice = female;
+  // Emit the same global speech signals so the mic-feedback guard still works
+  // on the browser-fallback path (e.g. when Google TTS is unavailable).
+  utterance.onstart = () => emitSpeechStarted();
+  utterance.onend = () => emitSpeechStopped();
+  utterance.onerror = () => emitSpeechStopped();
   window.speechSynthesis.speak(utterance);
 }
