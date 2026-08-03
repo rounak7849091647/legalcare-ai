@@ -45,6 +45,21 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
   const [uploadedDoc, setUploadedDoc] = useState<UploadedDocument | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Max height the composer can grow to before it starts scrolling internally
+  // (~6-7 lines). Keeps the input from taking over the screen on long pastes.
+  const TEXTAREA_MAX_HEIGHT = 200;
+
+  // Auto-grow the textarea to fit its content, capped at TEXTAREA_MAX_HEIGHT.
+  const autoResizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const next = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+  }, []);
   
   // Use the user's selected language for speech recognition
   const { currentLanguage } = useLanguage();
@@ -389,6 +404,12 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
     }
   };
 
+  // Keep the textarea height in sync with the message (covers typing, sends that
+  // clear the field, and voice-mode transcript updates).
+  useEffect(() => {
+    autoResizeTextarea();
+  }, [message, voiceMode, autoResizeTextarea]);
+
   const placeholder = voiceMode
     ? (isProcessingVoice ? 'Transcribing...' : isSpeaking ? 'AI speaking...' : isListening ? (isIOS && !useNativeSpeech ? 'Recording...' : 'Listening...') : isLoading ? 'Processing...' : 'Ready to listen')
     : uploadedDoc 
@@ -446,16 +467,21 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
             </div>
           )}
 
-        <input
-          type="text"
+        <textarea
+          ref={textareaRef}
+          rows={1}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onInput={autoResizeTextarea}
           placeholder={placeholder}
+          // Enter inserts a newline (native textarea behaviour); sending is via the
+          // Send button only, so the composer never submits unexpectedly mid-thought.
           // Group 6: allow typing while the AI is speaking. `message` is independent
           // of the voice transcript, so text + voice can be active simultaneously.
           // Only block typing while a request is in flight.
           disabled={isLoading}
-          className={`w-full ${voiceMode ? 'pl-12' : 'pl-12 sm:pl-14 lg:pl-16'} py-3 sm:py-3.5 lg:py-4 pr-24 sm:pr-28 lg:pr-32 rounded-full bg-secondary border-2 shadow-xl ${
+          style={{ maxHeight: `${TEXTAREA_MAX_HEIGHT}px` }}
+          className={`w-full resize-none ${voiceMode ? 'pl-12' : 'pl-12 sm:pl-14 lg:pl-16'} py-3 sm:py-3.5 lg:py-4 pr-24 sm:pr-28 lg:pr-32 rounded-3xl bg-secondary border-2 shadow-xl leading-relaxed align-middle ${
             isSpeaking
               ? 'border-primary/50'
               : voiceMode
@@ -463,7 +489,7 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
               : uploadedDoc
               ? 'border-primary/30'
               : 'border-border'
-          } text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50 text-sm sm:text-base lg:text-lg`}
+          } text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-colors disabled:opacity-50 text-sm sm:text-base lg:text-lg`}
         />
 
         {/* File upload button on left */}
@@ -474,14 +500,14 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
             size="icon"
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading || isUploading}
-            className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 h-7 w-7 sm:h-8 sm:w-8 lg:h-9 lg:w-9 text-muted-foreground hover:text-foreground hover:bg-accent rounded-full"
+            className="absolute left-2 sm:left-3 bottom-1.5 sm:bottom-2 h-7 w-7 sm:h-8 sm:w-8 lg:h-9 lg:w-9 text-muted-foreground hover:text-foreground hover:bg-accent rounded-full"
             aria-label="Upload document"
           >
             <Paperclip size={16} className={isUploading ? 'animate-spin' : ''} />
           </Button>
         )}
 
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        <div className="absolute right-2 bottom-1.5 sm:bottom-2 flex items-center gap-1">
           {isSupported && (
             <Button
               type="button"
