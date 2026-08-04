@@ -426,12 +426,14 @@ const chunkForTTS = (text) => {
 //   - Studio/Neural2/Wavenet/Standard: send SSML with <say-as interpret-as="characters"> wrapping
 //     for natural acronym pronunciation.
 //
-// Number handling: for any NON-English target language, we pre-convert digit sequences to
-// English words ("154" → "one hundred fifty four") so the native-language voice reads numbers
-// in clear English instead of native digit names — Indian users prefer this in legal contexts.
+// Number handling: native Chirp3-HD voices read digits correctly IN THEIR OWN
+// language (Telugu reads "138" as Telugu, Tamil as Tamil, etc.). The previous
+// approach converted digits to English WORDS ("one hundred thirty eight"), which
+// forced the native voice to speak English mid-sentence — that was the source of
+// the "mispronounced words" in Telugu/Tamil/Odia/Assamese. We now leave digits
+// as-is so every voice pronounces numbers naturally in its own language.
 const synthFullWithGoogle = async (text, language, voiceOverride, tuningOverride) => {
-  // Convert digits → English words for non-English languages BEFORE chunking.
-  const textForTTS = isEnglish(language) ? text : digitsToEnglishWords(text);
+  const textForTTS = text;
   const chunks = chunkForTTS(textForTTS);
   if (chunks.length === 0) throw new Error('Empty text after cleanup');
   const voice = voiceOverride || GOOGLE_VOICE_MAP[language] || GOOGLE_VOICE_MAP['en-IN'];
