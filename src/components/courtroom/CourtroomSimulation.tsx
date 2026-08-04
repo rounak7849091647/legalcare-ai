@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { invokeFunction } from '@/lib/api'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useAudio } from '@/hooks/useAudio'
+import { getVoiceSendMode, setVoiceSendMode, resolveVoiceTranscript, type VoiceSendMode } from '@/lib/voiceMode'
 import CourtroomVideoPanel from './CourtroomVideoPanel'
 import CourtroomTranscript, { type TranscriptEntry } from './CourtroomTranscript'
 import CourtroomEvidenceBoard from './CourtroomEvidenceBoard'
@@ -58,8 +59,18 @@ export default function CourtroomSimulation({
   const [activeTab, setActiveTab]           = useState<'transcript' | 'evidence'>('transcript')
   const [showTextInput, setShowTextInput]   = useState(false)
   const [textStatement, setTextStatement]   = useState('')
+  const [voiceSendMode, setVoiceSendModeState] = useState<VoiceSendMode>(getVoiceSendMode)
 
   const videoRef = useRef<HTMLVideoElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Persist the send-mode choice and, in manual mode, keep the text box visible
+  // so users can see where their transcribed speech will land.
+  const toggleVoiceSendMode = (mode: VoiceSendMode) => {
+    setVoiceSendModeState(mode)
+    setVoiceSendMode(mode)
+    if (mode === 'manual') setShowTextInput(true)
+  }
 
   useEffect(() => {
     navigator.mediaDevices
@@ -161,8 +172,19 @@ export default function CourtroomSimulation({
 
   const handleMicClick = () => {
     if (isLoading || isTTSSpeaking) return
-    if (isListening) stopListening()
-    else startListening(text => submitStatement(text))
+    if (isListening) { stopListening(); return }
+    startListening(spoken => {
+      const { action, text } = resolveVoiceTranscript(voiceSendMode, spoken)
+      if (action === 'send') {
+        submitStatement(text)               // Auto Send: fire immediately
+      } else if (text) {
+        // Manual Send: drop the transcript into the input (append if the user
+        // already typed/spoke something) for review/edit before sending.
+        setTextStatement(prev => (prev.trim() ? prev.trim() + ' ' : '') + text)
+        setShowTextInput(true)
+        setTimeout(() => textareaRef.current?.focus(), 50)
+      }
+    })
   }
 
   const handleGetHint = async () => {
@@ -397,6 +419,28 @@ export default function CourtroomSimulation({
                     </div>
                   )}
 
+                  {/* Voice send-mode toggle — remembered across sessions */}
+                  <div className="flex items-center justify-center mb-3">
+                    <div className="inline-flex items-center rounded-full border border-border bg-muted/30 p-0.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => toggleVoiceSendMode('auto')}
+                        title="Speak and the message is sent automatically"
+                        className={`px-3 py-1 rounded-full transition-all ${voiceSendMode === 'auto' ? 'bg-foreground text-background font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        Auto send
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleVoiceSendMode('manual')}
+                        title="Speech becomes editable text — review, then press Send/Enter"
+                        className={`px-3 py-1 rounded-full transition-all ${voiceSendMode === 'manual' ? 'bg-foreground text-background font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        Review before send
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Main controls */}
                   <div className="flex items-center justify-center gap-6 mb-3">
 
@@ -435,7 +479,11 @@ export default function CourtroomSimulation({
                         )}
                       </button>
                       <span className="mt-1.5 text-xs text-muted-foreground">
-                        {isListening ? 'Tap to stop' : isTTSSpeaking ? 'Wait…' : isLoading ? 'Processing…' : 'Tap to speak'}
+                        {isListening ? 'Listening… tap to stop'
+                          : isTTSSpeaking ? 'Wait…'
+                          : isLoading ? 'Processing…'
+                          : voiceSendMode === 'manual' ? 'Tap to speak — you can edit before sending'
+                          : 'Tap to speak — sends automatically'}
                       </span>
                     </div>
 
@@ -468,10 +516,18 @@ export default function CourtroomSimulation({
                   {showTextInput && (
                     <div className="flex gap-2 items-end mt-1 animate-slide-up">
                       <textarea
+                        ref={textareaRef}
                         value={textStatement}
                         onChange={e => setTextStatement(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitStatement(textStatement) } }}
-                        placeholder="Type your argument… (Enter to submit)"
+                        onKeyDown={e => {
+                          // Enter sends, Shift+Enter newline. Don't send while an IME
+                          // is composing (Hindi/Tamil/CJK) or when the box is empty.
+                          if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing && (e.nativeEvent as any).keyCode !== 229) {
+                            e.preventDefault()
+                            if (textStatement.trim()) submitStatement(textStatement)
+                          }
+                        }}
+                        placeholder={voiceSendMode === 'manual' ? 'Speak or type your argument, then review and press Enter…' : 'Type your argument… (Enter to submit)'}
                         rows={2}
                         disabled={isInputDisabled}
                         className="flex-1 bg-muted/30 border border-border rounded-lg
