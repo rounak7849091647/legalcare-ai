@@ -520,6 +520,10 @@ NEVER REFUSE: You can READ and UNDERSTAND the user's question no matter what lan
 LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.${purity}${antiRefusal}`;
 };
 
+// Shared reminder that India's criminal laws changed on 1 July 2024. Injected into
+// the courtroom (Discussion room) prompts so the AI judge/lawyers argue on current law.
+const CURRENT_LAW_NOTE = `IMPORTANT — CURRENT LAW: As of 1 July 2024, India's criminal laws are the Bharatiya Nyaya Sanhita 2023 (BNS, replaced IPC), Bharatiya Nagarik Suraksha Sanhita 2023 (BNSS, replaced CrPC), and Bharatiya Sakshya Adhiniyam 2023 (BSA, replaced the Evidence Act). Use these current laws as primary and, where helpful, note the old IPC/CrPC equivalent in brackets. Laws that were not replaced (e.g. Negotiable Instruments Act, Consumer Protection Act) stay unchanged.`;
+
 // 1. Chat Endpoint — alias to /functions/v1/legal-chat
 app.post('/api/chat', (req, res) => {
   req.url = '/functions/v1/legal-chat';
@@ -696,7 +700,7 @@ app.post('/functions/v1/courtroom-ai', async (req, res) => {
       const content = await callAI([
         {
           role: 'system',
-          content: `You are an expert Indian legal case analyzer. Analyze the provided legal documents and extract structured information. You must respond in valid JSON format only, no markdown. ${langInstruction} — but keep JSON keys in English, only values should be in the selected language.`
+          content: `You are an expert Indian legal case analyzer. Analyze the provided legal documents and extract structured information. You must respond in valid JSON format only, no markdown. ${langInstruction} ${CURRENT_LAW_NOTE} — but keep JSON keys in English, only values should be in the selected language.`
         },
         {
           role: 'user',
@@ -772,7 +776,7 @@ ${docContent}`
       const content = await callAI([
         {
           role: 'system',
-          content: `${config.prompt}${roleRules}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown formatting. Write in plain conversational court language. Stay strictly within Indian legal framework.`
+          content: `${config.prompt}${roleRules}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown formatting. Write in plain conversational court language. Stay strictly within Indian legal framework. ${CURRENT_LAW_NOTE}`
         },
         {
           role: 'user',
@@ -794,7 +798,7 @@ ${docContent}`
       const judgeContent = await callAI([
         {
           role: 'system',
-          content: `You are the AI Judge in an Indian courtroom. The ${userRole === 'complainant' ? 'complainant' : 'accused'} (acting as their own lawyer) has just presented this argument: "${userMsg}". Acknowledge the argument, briefly evaluate its legal merit, and formally direct the ${opponentRole} to respond. Be neutral and formal. 3-5 sentences.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only.`
+          content: `You are the AI Judge in an Indian courtroom. The ${userRole === 'complainant' ? 'complainant' : 'accused'} (acting as their own lawyer) has just presented this argument: "${userMsg}". Acknowledge the argument, briefly evaluate its legal merit, and formally direct the ${opponentRole} to respond. Be neutral and formal. 3-5 sentences.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only. ${CURRENT_LAW_NOTE}`
         },
         { role: 'user', content: "Respond to the user's argument as the judge." }
       ], 900);
@@ -802,7 +806,7 @@ ${docContent}`
       const rebuttalContent = await callAI([
         {
           role: 'system',
-          content: `You are the ${opponentRole} in an Indian courtroom. The opposing party just argued: "${userMsg}". The judge has acknowledged it. Now deliver a strong, evidence-based rebuttal. Challenge their points using law, evidence, and logic. 4-6 sentences.\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nJudge's response: ${judgeContent}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only.`
+          content: `You are the ${opponentRole} in an Indian courtroom. The opposing party just argued: "${userMsg}". The judge has acknowledged it. Now deliver a strong, evidence-based rebuttal. Challenge their points using law, evidence, and logic. 4-6 sentences.\n\n${langInstruction}\n\nCase Analysis: ${analysis}\n\nPrevious proceedings:\n${prevArgs}\n\nJudge's response: ${judgeContent}\n\nIMPORTANT: Do NOT use any markdown. Plain conversational court language only. ${CURRENT_LAW_NOTE}`
         },
         { role: 'user', content: "Deliver your rebuttal to the user's argument." }
       ], 900);
@@ -830,7 +834,7 @@ ${docContent}`
       const content = await callAI([
         {
           role: 'system',
-          content: `You are an AI Judge delivering a final judgment in an Indian courtroom simulation. The user acted as their own lawyer. You must be completely neutral and base your judgment strictly on law, evidence, and logical reasoning.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nStructure your judgment as follows (use plain text, no markdown):\n\nCASE SUMMARY:\n[2-3 sentences summarizing the case]\n\nLEGAL ANALYSIS:\n[Analysis of the legal issues and applicable laws]\n\nEVALUATION OF ARGUMENTS:\n[Assessment of arguments presented by the user and the AI opponent lawyer]\n\nEVALUATION OF EVIDENCE:\n[Assessment of evidence presented by both sides]\n\nAPPLICATION OF LAW:\n[How the relevant laws apply to the facts]\n\nREASONING:\n[Your logical reasoning for the decision]\n\nFINAL DECISION:\n[Clear statement of the judgment]\n\nSUGGESTED NEXT STEPS:\n[2-3 practical steps for the parties]\n\nCase Analysis: ${analysis}\n\nFull proceedings:\n${allArgs}\n\nIMPORTANT: Be fair, neutral, and thorough. Do not fabricate legal sections.`
+          content: `You are an AI Judge delivering a final judgment in an Indian courtroom simulation. The user acted as their own lawyer. You must be completely neutral and base your judgment strictly on law, evidence, and logical reasoning.\n\n${JUDGE_SPEECH_RULES}\n\n${langInstruction}\n\nStructure your judgment as follows (use plain text, no markdown):\n\nCASE SUMMARY:\n[2-3 sentences summarizing the case]\n\nLEGAL ANALYSIS:\n[Analysis of the legal issues and applicable laws]\n\nEVALUATION OF ARGUMENTS:\n[Assessment of arguments presented by the user and the AI opponent lawyer]\n\nEVALUATION OF EVIDENCE:\n[Assessment of evidence presented by both sides]\n\nAPPLICATION OF LAW:\n[How the relevant laws apply to the facts]\n\nREASONING:\n[Your logical reasoning for the decision]\n\nFINAL DECISION:\n[Clear statement of the judgment]\n\nSUGGESTED NEXT STEPS:\n[2-3 practical steps for the parties]\n\nCase Analysis: ${analysis}\n\nFull proceedings:\n${allArgs}\n\nIMPORTANT: Be fair, neutral, and thorough. Do not fabricate legal sections. ${CURRENT_LAW_NOTE}`
         },
         { role: 'user', content: 'Deliver the final judgment for this case.' }
       ], 2500);
@@ -885,7 +889,13 @@ PERSONALITY:
 - DO NOT use emojis or pictographs anywhere in your response. The answer is read aloud by a TTS voice; emojis make the voice say things like "smiling face" or "scales" which sounds broken. Convey warmth through wording, not symbols.
 
 CONTENT:
-- Give accurate, real advice based on Indian law (BNS, IPC, CrPC, CPC, consumer protection, family law, property law, RTI, etc.).
+- Give accurate, real advice based on Indian law.
+- CURRENT LAW (very important): India replaced its three main criminal laws on 1 July 2024. ALWAYS use the NEW laws as primary:
+  • Bharatiya Nyaya Sanhita, 2023 (BNS) — replaced the Indian Penal Code (IPC).
+  • Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS) — replaced the CrPC.
+  • Bharatiya Sakshya Adhiniyam, 2023 (BSA) — replaced the Indian Evidence Act.
+  Cite the current BNS/BNSS/BSA section and, when helpful, mention the old IPC/CrPC equivalent in brackets so the user can connect them (e.g. "Section 318 BNS, earlier IPC 420"). Civil/other laws that were NOT replaced (Negotiable Instruments Act, Consumer Protection Act, Hindu Marriage Act, RTI, GST, etc.) stay as they are.
+- If a matter may depend on a very recent amendment or judgment, add one short line telling the user to confirm the latest position with a lawyer, since laws can change.
 - Mention relevant laws/sections naturally in conversation — don't list them in a formal table.
 - Give practical next steps the user can actually take today.
 - End with a short friendly reminder that you're a legal buddy, not the user's official lawyer — phrased naturally in the target language.
