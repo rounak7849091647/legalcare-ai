@@ -6,7 +6,8 @@ import { useWhisperRecognition } from '@/hooks/useWhisperRecognition';
 import { useInactivityPrompt } from '@/hooks/useInactivityPrompt';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
-import { isIOSDevice } from '@/lib/device/isIOSDevice';
+import { isIOSDevice, isMobileDevice } from '@/lib/device/isIOSDevice';
+import { shouldSubmitOnEnter } from '@/lib/keyboard';
 import { unlockAudioContext } from '@/hooks/useMobileAudio';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -342,16 +343,37 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
     toast.info('Document removed');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Shared send logic used by both the form submit and Enter-to-send.
+  const doSend = () => {
     unlockAudioContext(); // Unlock audio on submit
     if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
-    
+
     if (message.trim() && !isLoading) {
       onSend(message.trim(), uploadedDoc?.content);
       setMessage('');
       resetTranscript();
       lastTranscriptRef.current = '';
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    doSend();
+  };
+
+  // Enter sends, Shift+Enter makes a newline. Skipped on mobile (touch keyboards
+  // use Enter for newline; sending is via the button there) and while an IME is
+  // composing a word (Enter confirms the candidate, e.g. Hindi/Tamil/CJK input).
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMobileDevice()) return;
+    if (shouldSubmitOnEnter({
+      key: e.key,
+      shiftKey: e.shiftKey,
+      isComposing: (e.nativeEvent as any).isComposing,
+      keyCode: (e.nativeEvent as any).keyCode,
+    })) {
+      e.preventDefault();
+      doSend();
     }
   };
 
@@ -473,9 +495,9 @@ const ChatInput = forwardRef<HTMLDivElement, ChatInputProps>(({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onInput={autoResizeTextarea}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          // Enter inserts a newline (native textarea behaviour); sending is via the
-          // Send button only, so the composer never submits unexpectedly mid-thought.
+          // Enter sends (see handleKeyDown), Shift+Enter makes a newline.
           // Group 6: allow typing while the AI is speaking. `message` is independent
           // of the voice transcript, so text + voice can be active simultaneously.
           // Only block typing while a request is in flight.
