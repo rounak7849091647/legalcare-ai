@@ -498,10 +498,26 @@ const getLanguageInstructions = (lang) => {
 
 NEVER REFUSE: You can READ and UNDERSTAND the user's question no matter what language or script they typed it in (Assamese, Odia, Bengali, Tamil, etc.). ALWAYS answer their actual question. Do NOT say "I can only respond in X", do NOT ask them to rewrite their question in another language, and do NOT reject the message. Just understand it and reply helpfully.`;
 
+  // Confusable-language PURITY guards. Several Indian languages are close cousins
+  // (Bengali/Assamese share a script; Hindi/Marathi share Devanagari; Punjabi and
+  // Telugu often absorb Hindi words). The model tends to bleed one into the other,
+  // so we name the specific language to avoid for each.
+  const CONFUSABLE_PURITY = {
+    'bn-IN': ' PURITY: Use standard Bengali (বাংলা) ONLY. Do NOT use Assamese words or the Assamese-only letters ৰ/ৱ — use Bengali র/ব.',
+    'as-IN': ' PURITY: Use Assamese (অসমীয়া) ONLY, with Assamese word-forms and ৰ/ৱ. Do NOT slip into standard Bengali.',
+    'hi-IN': ' PURITY: Use standard Hindi ONLY. Do NOT use Marathi or Urdu words.',
+    'mr-IN': ' PURITY: Use Marathi ONLY (आहे, आणि, मला...). Do NOT use Hindi words (है, और, मुझे...).',
+    'te-IN': ' PURITY: Use Telugu ONLY. Do NOT mix in Hindi or English words.',
+    'pa-IN': ' PURITY: Use Punjabi ONLY. Do NOT mix in Hindi words.',
+    'or-IN': ' PURITY: Use Odia ONLY. Do NOT mix in Hindi or Bengali words.',
+    'gu-IN': ' PURITY: Use Gujarati ONLY. Do NOT mix in Hindi words.',
+  };
+  const purity = CONFUSABLE_PURITY[lang] || '';
+
   if (lang === 'hinglish') return base + antiRefusal;
   return `${base}
 
-LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.${antiRefusal}`;
+LANGUAGE LOCK: Write your ENTIRE answer in this one language — first word to last. Do NOT switch to Hindi, English, or any other language partway through, not even for a single phrase. Finish every sentence and complete your full thought before stopping; never end mid-sentence.${purity}${antiRefusal}`;
 };
 
 // 1. Chat Endpoint — alias to /functions/v1/legal-chat

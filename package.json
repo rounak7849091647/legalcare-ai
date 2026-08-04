@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test:lang": "node tests/language-routing.test.mjs",
     "test:keyboard": "node tests/keyboard.test.mjs",
+    "test:purity": "node tests/language-purity.test.mjs",
     "test": "node tests/keyboard.test.mjs && node tests/language-routing.test.mjs"
   },
   "dependencies": {
