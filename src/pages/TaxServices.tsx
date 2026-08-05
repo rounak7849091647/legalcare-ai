@@ -117,12 +117,17 @@ const TaxServices = () => {
         tax = Math.min(tax, annualIncome - 1200000);
       }
     } else {
+      // Old Regime slabs (basic exemption ₹2.5L).
       if (annualIncome > 1000000) {
         tax = 112500 + (annualIncome - 1000000) * 0.30;
       } else if (annualIncome > 500000) {
         tax = 12500 + (annualIncome - 500000) * 0.20;
       } else if (annualIncome > 250000) {
         tax = (annualIncome - 250000) * 0.05;
+      }
+      // Section 87A rebate (old regime): no tax for income up to ₹5,00,000.
+      if (annualIncome <= 500000) {
+        tax = 0;
       }
     }
 
@@ -303,7 +308,10 @@ const TaxServices = () => {
                   <div className="bg-secondary rounded-lg p-4">
                     <p className="text-sm text-muted-foreground mb-2">Effective Tax Rate</p>
                     <p className="text-xl font-bold text-foreground">
-                      {((taxResult.total / parseFloat(income.replace(/,/g, ''))) * 100).toFixed(2)}%
+                      {(() => {
+                        const inc = parseFloat(income.replace(/,/g, '')) || 0;
+                        return (inc > 0 ? (taxResult.total / inc) * 100 : 0).toFixed(2);
+                      })()}%
                     </p>
                   </div>
                 </div>
