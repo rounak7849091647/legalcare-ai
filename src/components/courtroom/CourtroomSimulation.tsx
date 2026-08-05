@@ -323,33 +323,57 @@ export default function CourtroomSimulation({
           {/* Center: panels + controls */}
           <div className="flex-1 flex flex-col overflow-hidden">
 
-            {/* 3 participant panels — single col on mobile, 3-col on desktop */}
-            <div className="flex-1 p-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-center overflow-y-auto md:overflow-hidden md:max-h-[56vh]">
-              <CourtroomVideoPanel
-                role="opponent"
-                name={opponentLabel}
-                title={opponentTitle}
-                isSpeaking={isSpeaking.opponent}
-                isTTSSpeaking={isTTSSpeaking && ttsRole === 'opponent'}
-                lastStatement={lastOpponent}
-              />
-              <CourtroomVideoPanel
-                role="judge"
-                name="The Honourable AI"
-                title="Judge"
-                isSpeaking={isSpeaking.judge}
-                isTTSSpeaking={isTTSSpeaking && ttsRole === 'judge'}
-                lastStatement={lastJudge}
-              />
-              <CourtroomVideoPanel
-                role="user"
-                name="You — Counsel"
-                title={userTitle}
-                isSpeaking={isListening}
-                isTTSSpeaking={false}
-                isUser={true}
-                videoRef={videoRef}
-              />
+            {/* Courtroom bench — Defense · Judge · Prosecution as three full-height
+                columns with headers and vertical dividers. Side-by-side on desktop,
+                stacked on mobile. Layout only — same panels, props, data and logic. */}
+            <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto md:overflow-hidden
+              divide-y md:divide-y-0 md:divide-x divide-border">
+
+              {/* Left column — opposing counsel (Defense / Prosecution) */}
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+                <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-destructive">
+                  {opponentTitle}
+                </h3>
+                <CourtroomVideoPanel
+                  role="opponent"
+                  name={opponentLabel}
+                  title={opponentTitle}
+                  isSpeaking={isSpeaking.opponent}
+                  isTTSSpeaking={isTTSSpeaking && ttsRole === 'opponent'}
+                  lastStatement={lastOpponent}
+                />
+              </div>
+
+              {/* Center column — Judge */}
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+                <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-foreground">
+                  Judge
+                </h3>
+                <CourtroomVideoPanel
+                  role="judge"
+                  name="The Honourable AI"
+                  title="Judge"
+                  isSpeaking={isSpeaking.judge}
+                  isTTSSpeaking={isTTSSpeaking && ttsRole === 'judge'}
+                  lastStatement={lastJudge}
+                />
+              </div>
+
+              {/* Right column — your counsel (Complainant / Defense) */}
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+                <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                  {userTitle}
+                </h3>
+                <CourtroomVideoPanel
+                  role="user"
+                  name="You — Counsel"
+                  title={userTitle}
+                  isSpeaking={isListening}
+                  isTTSSpeaking={false}
+                  isUser={true}
+                  videoRef={videoRef}
+                />
+              </div>
             </div>
 
             {/* Mobile-only transcript (shows below video panels on small screens) */}
