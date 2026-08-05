@@ -28,13 +28,16 @@ const additionalServices = [
   { icon: Phone, title: 'Connect Expert', description: 'One-on-one consultation', path: '/tax-services/connect-expert' },
 ];
 
+// New Tax Regime slabs — FY 2025-26 (AY 2026-27), as revised in Budget 2025.
+// Section 87A rebate makes income up to ₹12,00,000 effectively tax-free.
 const taxSlabsNew = [
-  { range: '0 - 3,00,000', rate: 'Nil' },
-  { range: '3,00,001 - 7,00,000', rate: '5%' },
-  { range: '7,00,001 - 10,00,000', rate: '10%' },
-  { range: '10,00,001 - 12,00,000', rate: '15%' },
-  { range: '12,00,001 - 15,00,000', rate: '20%' },
-  { range: 'Above 15,00,000', rate: '30%' },
+  { range: '0 - 4,00,000', rate: 'Nil' },
+  { range: '4,00,001 - 8,00,000', rate: '5%' },
+  { range: '8,00,001 - 12,00,000', rate: '10%' },
+  { range: '12,00,001 - 16,00,000', rate: '15%' },
+  { range: '16,00,001 - 20,00,000', rate: '20%' },
+  { range: '20,00,001 - 24,00,000', rate: '25%' },
+  { range: 'Above 24,00,000', rate: '30%' },
 ];
 
 const taxServicesSchema = {
@@ -92,16 +95,26 @@ const TaxServices = () => {
     let tax = 0;
 
     if (regime === 'new') {
-      if (annualIncome > 1500000) {
-        tax = 150000 + (annualIncome - 1500000) * 0.30;
+      // New Tax Regime — FY 2025-26 (AY 2026-27), Budget 2025 slabs.
+      if (annualIncome > 2400000) {
+        tax = 300000 + (annualIncome - 2400000) * 0.30;
+      } else if (annualIncome > 2000000) {
+        tax = 200000 + (annualIncome - 2000000) * 0.25;
+      } else if (annualIncome > 1600000) {
+        tax = 120000 + (annualIncome - 1600000) * 0.20;
       } else if (annualIncome > 1200000) {
-        tax = 90000 + (annualIncome - 1200000) * 0.20;
-      } else if (annualIncome > 1000000) {
-        tax = 60000 + (annualIncome - 1000000) * 0.15;
-      } else if (annualIncome > 700000) {
-        tax = 30000 + (annualIncome - 700000) * 0.10;
-      } else if (annualIncome > 300000) {
-        tax = (annualIncome - 300000) * 0.05;
+        tax = 60000 + (annualIncome - 1200000) * 0.15;
+      } else if (annualIncome > 800000) {
+        tax = 20000 + (annualIncome - 800000) * 0.10;
+      } else if (annualIncome > 400000) {
+        tax = (annualIncome - 400000) * 0.05;
+      }
+      // Section 87A rebate: no tax for income up to ₹12,00,000.
+      if (annualIncome <= 1200000) {
+        tax = 0;
+      } else {
+        // Marginal relief just above ₹12L: tax can't exceed income over ₹12L.
+        tax = Math.min(tax, annualIncome - 1200000);
       }
     } else {
       if (annualIncome > 1000000) {
@@ -129,7 +142,7 @@ const TaxServices = () => {
     <PageLayout>
       <SEOHead
         title="Tax Services India - ITR Filing, Tax Planning & CA Assistance"
-        description="Comprehensive tax services for Indian citizens. File ITR online, get expert CA assistance, track refunds, calculate taxes with our free calculator. FY 2024-25 tax slabs."
+        description="Comprehensive tax services for Indian citizens. File ITR online, get expert CA assistance, track refunds, calculate taxes with our free calculator. FY 2025-26 new regime tax slabs."
         keywords="ITR filing, income tax return, tax calculator India, CA assisted filing, tax planning, refund status, TDS, NRI taxes, capital gains tax"
         canonicalUrl="/tax-services"
         structuredData={taxServicesSchema}
@@ -303,7 +316,7 @@ const TaxServices = () => {
 
               {/* Tax Slabs Reference */}
               <div className="mt-6">
-                <h4 className="text-sm font-medium text-foreground mb-3">New Regime Tax Slabs (FY 2024-25)</h4>
+                <h4 className="text-sm font-medium text-foreground mb-3">New Regime Tax Slabs (FY 2025-26)</h4>
                 <div className="space-y-2">
                   {taxSlabsNew.map((slab, index) => (
                     <div key={index} className="flex justify-between text-xs">
@@ -312,6 +325,9 @@ const TaxServices = () => {
                     </div>
                   ))}
                 </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Under Section 87A rebate, there is no tax for income up to ₹12,00,000. A 4% health &amp; education cess applies on the tax. This is an estimate — please verify with a CA for your exact liability.
+                </p>
               </div>
             </CardContent>
           </Card>
