@@ -330,49 +330,58 @@ export default function CourtroomSimulation({
               divide-y md:divide-y-0 md:divide-x divide-border">
 
               {/* Left column — opposing counsel (Defense / Prosecution) */}
-              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2">
                 <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-destructive">
                   {opponentTitle}
                 </h3>
-                <CourtroomVideoPanel
-                  role="opponent"
-                  name={opponentLabel}
-                  title={opponentTitle}
-                  isSpeaking={isSpeaking.opponent}
-                  isTTSSpeaking={isTTSSpeaking && ttsRole === 'opponent'}
-                  lastStatement={lastOpponent}
-                />
+                <div className="flex-shrink-0">
+                  <CourtroomVideoPanel
+                    role="opponent"
+                    name={opponentLabel}
+                    title={opponentTitle}
+                    isSpeaking={isSpeaking.opponent}
+                    isTTSSpeaking={isTTSSpeaking && ttsRole === 'opponent'}
+                    lastStatement={lastOpponent}
+                  />
+                </div>
+                <ColumnFeed entries={transcript.filter(e => e.role === 'OPPONENT')} accent="border-l-destructive/50" />
               </div>
 
               {/* Center column — Judge */}
-              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2">
                 <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-foreground">
                   Judge
                 </h3>
-                <CourtroomVideoPanel
-                  role="judge"
-                  name="The Honourable AI"
-                  title="Judge"
-                  isSpeaking={isSpeaking.judge}
-                  isTTSSpeaking={isTTSSpeaking && ttsRole === 'judge'}
-                  lastStatement={lastJudge}
-                />
+                <div className="flex-shrink-0">
+                  <CourtroomVideoPanel
+                    role="judge"
+                    name="The Honourable AI"
+                    title="Judge"
+                    isSpeaking={isSpeaking.judge}
+                    isTTSSpeaking={isTTSSpeaking && ttsRole === 'judge'}
+                    lastStatement={lastJudge}
+                  />
+                </div>
+                <ColumnFeed entries={transcript.filter(e => e.role === 'JUDGE' || e.role === 'JUDGE (VERDICT)')} accent="border-l-foreground/40" />
               </div>
 
               {/* Right column — your counsel (Complainant / Defense) */}
-              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2 md:overflow-y-auto">
+              <div className="w-full md:flex-1 md:min-w-0 flex flex-col min-h-0 p-3 gap-2">
                 <h3 className="flex-shrink-0 text-center text-sm font-bold uppercase tracking-wide text-muted-foreground">
                   {userTitle}
                 </h3>
-                <CourtroomVideoPanel
-                  role="user"
-                  name="You — Counsel"
-                  title={userTitle}
-                  isSpeaking={isListening}
-                  isTTSSpeaking={false}
-                  isUser={true}
-                  videoRef={videoRef}
-                />
+                <div className="flex-shrink-0">
+                  <CourtroomVideoPanel
+                    role="user"
+                    name="You — Counsel"
+                    title={userTitle}
+                    isSpeaking={isListening}
+                    isTTSSpeaking={false}
+                    isUser={true}
+                    videoRef={videoRef}
+                  />
+                </div>
+                <ColumnFeed entries={transcript.filter(e => e.role === 'USER (COUNSEL)')} accent="border-l-muted-foreground/40" />
               </div>
             </div>
 
@@ -580,6 +589,25 @@ export default function CourtroomSimulation({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Per-column court transcript. Renders that participant's statements (from the
+// existing `transcript` state) inside their bench column, newest scrolled into
+// view. Desktop: scrolls within the column; mobile: flows with the page.
+function ColumnFeed({ entries, accent }: { entries: TranscriptEntry[]; accent: string }) {
+  const bottomRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [entries.length])
+  if (entries.length === 0) return null
+  return (
+    <div className="space-y-2 md:flex-1 md:min-h-0 md:overflow-y-auto md:pr-1">
+      {entries.map((e, i) => (
+        <div key={i} className={`rounded-md border-l-2 ${accent} bg-muted/20 px-3 py-2 animate-slide-up`}>
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{e.content}</p>
+        </div>
+      ))}
+      <div ref={bottomRef} />
     </div>
   )
 }
