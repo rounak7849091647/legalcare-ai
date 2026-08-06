@@ -12,7 +12,7 @@ import { useLanguage } from '@/contexts/LanguageContext'
 import { useAudio } from '@/hooks/useAudio'
 import { getVoiceSendMode, setVoiceSendMode, resolveVoiceTranscript, type VoiceSendMode } from '@/lib/voiceMode'
 import CourtroomVideoPanel from './CourtroomVideoPanel'
-import CourtroomTranscript, { type TranscriptEntry } from './CourtroomTranscript'
+import { type TranscriptEntry } from './CourtroomTranscript'
 import CourtroomEvidenceBoard from './CourtroomEvidenceBoard'
 import CourtroomFeedbackReport from './CourtroomFeedbackReport'
 
@@ -56,7 +56,6 @@ export default function CourtroomSimulation({
   const [verdictData, setVerdictData]       = useState<any | null>(null)
   const [isConcluded, setIsConcluded]       = useState(false)
   const [isSpeaking, setIsSpeaking]         = useState({ judge: false, opponent: false })
-  const [activeTab, setActiveTab]           = useState<'transcript' | 'evidence'>('transcript')
   const [showTextInput, setShowTextInput]   = useState(false)
   const [textStatement, setTextStatement]   = useState('')
   const [voiceSendMode, setVoiceSendModeState] = useState<VoiceSendMode>(getVoiceSendMode)
@@ -235,7 +234,10 @@ export default function CourtroomSimulation({
   const userTitle        = userRole === 'complainant' ? 'Complainant' : 'Defense'
 
   return (
-    <div className="h-full flex flex-col bg-background overflow-hidden">
+    // Lock to the viewport (below the 56px app header) so the bench scrolls
+    // internally and the mic controls stay pinned — h-full didn't cap because the
+    // page container uses min-h-svh (grows with content).
+    <div className="h-[calc(100dvh-56px)] flex flex-col bg-background overflow-hidden">
 
       {/* ── Session sub-header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/60 backdrop-blur-sm flex-shrink-0">
@@ -296,32 +298,20 @@ export default function CourtroomSimulation({
       ) : (
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
 
-          {/* Sidebar — hidden on mobile, shown on md+ */}
+          {/* Sidebar — Evidence only. The court transcript now lives inside the
+              three bench columns, so it is no longer duplicated here. */}
           <div className="hidden md:flex w-60 flex-shrink-0 border-r border-border flex-col bg-card/30">
-            <div className="flex border-b border-border">
-              {(['transcript', 'evidence'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2 text-xs font-medium capitalize transition-colors ${
-                    activeTab === tab
-                      ? 'text-foreground border-b-2 border-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border flex-shrink-0">
+              <span className="text-xs font-medium text-foreground">Evidence</span>
             </div>
-            <div className="flex-1 overflow-hidden">
-              {activeTab === 'transcript'
-                ? <CourtroomTranscript entries={transcript} />
-                : <CourtroomEvidenceBoard caseAnalysis={caseAnalysis} userRole={userRole} />}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <CourtroomEvidenceBoard caseAnalysis={caseAnalysis} userRole={userRole} />
             </div>
           </div>
 
-          {/* Center: panels + controls */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Center: panels + controls. min-w-0/min-h-0 keep the bench from growing
+              past the viewport so the mic controls stay pinned (no page scroll). */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
 
             {/* Courtroom bench — Defense · Judge · Prosecution as three full-height
                 columns with headers and vertical dividers. Side-by-side on desktop,
