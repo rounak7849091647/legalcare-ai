@@ -25,6 +25,7 @@ import {
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { loadStatuteIndex, retrieveStatuteContext } from './statuteRag.js';
 import { loadJudgmentIndex, retrieveJudgmentContext } from './judgmentRag.js';
+import { loadStateLawIndex, retrieveStateLawContext } from './stateLawRag.js';
 
 const dnsResolve = dns.promises;
 
@@ -919,15 +920,19 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     let ragBlock = '';
     try {
       // Retrieve statute text + real Supreme Court precedents in parallel.
-      const [statuteContext, judgmentContext] = await Promise.all([
+      const [statuteContext, judgmentContext, stateLawContext] = await Promise.all([
         retrieveStatuteContext(message),
         retrieveJudgmentContext(message),
+        retrieveStateLawContext(message),
       ]);
       if (statuteContext) {
         ragBlock += `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
       }
       if (judgmentContext) {
         ragBlock += `\n\nRELEVANT SUPREME COURT PRECEDENTS (real cases retrieved for this question — you MAY mention one only if it genuinely fits; cite it exactly as given; NEVER invent case names or citations):\n${judgmentContext}`;
+      }
+      if (stateLawContext) {
+        ragBlock += `\n\nRELEVANT STATE/UT ACTS (real state legislation matched by title — mention only if the question concerns that state; these are act names/years only, NOT full text, so do not fabricate section contents):\n${stateLawContext}`;
       }
     } catch { /* ignore — never block chat on retrieval */ }
 
@@ -1872,8 +1877,9 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date() });
 });
 
-loadStatuteIndex();  // bundled statute RAG index (bare acts + Constitution + criminal laws)
-loadJudgmentIndex(); // bundled judgment RAG index (recent Supreme Court precedents)
+loadStatuteIndex();  // bundled statute RAG index (~800 central acts + Constitution + criminal laws)
+loadJudgmentIndex(); // bundled judgment RAG index (Supreme Court precedents, all years)
+loadStateLawIndex(); // bundled state-law index (all 36 states/UTs, act metadata)
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
