@@ -24,6 +24,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { loadStatuteIndex, retrieveStatuteContext } from './statuteRag.js';
+import { loadJudgmentIndex, retrieveJudgmentContext } from './judgmentRag.js';
 
 const dnsResolve = dns.promises;
 
@@ -917,9 +918,16 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     // the reply into the user's selected language.
     let ragBlock = '';
     try {
-      const statuteContext = await retrieveStatuteContext(message);
+      // Retrieve statute text + real Supreme Court precedents in parallel.
+      const [statuteContext, judgmentContext] = await Promise.all([
+        retrieveStatuteContext(message),
+        retrieveJudgmentContext(message),
+      ]);
       if (statuteContext) {
-        ragBlock = `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
+        ragBlock += `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
+      }
+      if (judgmentContext) {
+        ragBlock += `\n\nRELEVANT SUPREME COURT PRECEDENTS (real cases retrieved for this question — you MAY mention one only if it genuinely fits; cite it exactly as given; NEVER invent case names or citations):\n${judgmentContext}`;
       }
     } catch { /* ignore — never block chat on retrieval */ }
 
@@ -1864,7 +1872,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date() });
 });
 
-loadStatuteIndex(); // load the bundled statute RAG index at startup
+loadStatuteIndex();  // bundled statute RAG index (bare acts + Constitution + criminal laws)
+loadJudgmentIndex(); // bundled judgment RAG index (recent Supreme Court precedents)
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
