@@ -26,6 +26,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { loadStatuteIndex, retrieveStatuteContext } from './statuteRag.js';
 import { loadJudgmentIndex, retrieveJudgmentContext } from './judgmentRag.js';
 import { loadStateLawIndex, retrieveStateLawContext } from './stateLawRag.js';
+import { loadStateFullTextIndex, retrieveStateFullText } from './stateFullTextRag.js';
 
 const dnsResolve = dns.promises;
 
@@ -920,11 +921,15 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     let ragBlock = '';
     try {
       // Retrieve statute text + real Supreme Court precedents in parallel.
-      const [statuteContext, judgmentContext, stateLawContext] = await Promise.all([
+      const [statuteContext, judgmentContext, stateLawContext, stateFullText] = await Promise.all([
         retrieveStatuteContext(message),
         retrieveJudgmentContext(message),
         retrieveStateLawContext(message),
+        retrieveStateFullText(message),
       ]);
+      if (stateFullText) {
+        ragBlock += `\n\nRELEVANT STATE ACT TEXT (actual section text of a state act, retrieved for this question — treat as authoritative for that state, but still reply in the user's language):\n${stateFullText}`;
+      }
       if (statuteContext) {
         ragBlock += `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
       }
@@ -1880,6 +1885,7 @@ app.get('/health', (req, res) => {
 loadStatuteIndex();  // bundled statute RAG index (~800 central acts + Constitution + criminal laws)
 loadJudgmentIndex(); // bundled judgment RAG index (Supreme Court precedents, all years)
 loadStateLawIndex(); // bundled state-law index (all 36 states/UTs, act metadata)
+loadStateFullTextIndex(); // Tier 2: full section text of state acts (seeded: Maharashtra)
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
