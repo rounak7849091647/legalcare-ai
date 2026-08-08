@@ -23,6 +23,7 @@ import {
   QueryCommand, UpdateCommand, DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import { loadStatuteIndex, retrieveStatuteContext } from './statuteRag.js';
 
 const dnsResolve = dns.promises;
 
@@ -910,7 +911,19 @@ FORMATTING:
 LANGUAGE LOCK (most important rule):
 Your ENTIRE response — every single sentence, including greetings, headers, action steps, and the closing reminder — MUST be written in the language above (code: ${detectedLanguage || 'en-IN'}). Do NOT mix in English unless the target IS English or Hinglish. If the user types in English but their selected language is Hindi, you reply in HINDI. If they switch to Tamil mid-conversation, you switch to TAMIL. The selected language ALWAYS wins. Legal acronyms (FIR, IPC, GST) may stay in their standard form, but everything else must be in the selected language's native script.`;
 
-    const messages = [{ role: 'system', content: systemPrompt }];
+    // RAG: pull the most relevant CURRENT statute sections and ground the answer
+    // in the real bare-act text. Non-blocking — if it finds nothing, chat proceeds
+    // exactly as before. The statute text is English; the LANGUAGE LOCK still forces
+    // the reply into the user's selected language.
+    let ragBlock = '';
+    try {
+      const statuteContext = await retrieveStatuteContext(message);
+      if (statuteContext) {
+        ragBlock = `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
+      }
+    } catch { /* ignore — never block chat on retrieval */ }
+
+    const messages = [{ role: 'system', content: systemPrompt + ragBlock }];
 
     // Add conversation history if provided
     if (Array.isArray(conversationHistory)) {
@@ -1850,6 +1863,8 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date() });
 });
+
+loadStatuteIndex(); // load the bundled statute RAG index at startup
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
