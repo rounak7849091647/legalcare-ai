@@ -300,6 +300,28 @@ const DisclaimerPopup = () => {
                 </div>
               </section>
 
+              {/* Section 12 — Legal data sources & attribution */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-teal-500" />
+                  <h3 className="font-semibold text-base">12. LEGAL DATA SOURCES & ATTRIBUTION</h3>
+                </div>
+                <div className="pl-6 space-y-2 text-muted-foreground">
+                  <p>
+                    To ground its answers in real Indian law, LegalCareAI uses the following open datasets. Bare-act, Constitution and judgment texts are Government of India works reproduced under the Copyright Act, 1957 (Section 52). We gratefully acknowledge:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Central Acts corpus — "An annotated dataset of Central Acts" (Zenodo record 5088102), licensed CC-BY-4.0.</li>
+                    <li>Bharatiya Nyaya Sanhita, Bharatiya Nagarik Suraksha Sanhita & Bharatiya Sakshya Adhiniyam, 2023 — dataset "indian-legal-sections-bns-bnss-bsa-2023" (Hugging Face, GSMS-B), licensed Apache-2.0.</li>
+                    <li>Constitution of India — civictech-India "constitution-of-india" open dataset.</li>
+                    <li>Supreme Court of India judgments — "indian-supreme-court-judgments" open dataset (AWS Open Data Registry), licensed CC-BY-4.0.</li>
+                  </ul>
+                  <p>
+                    These sources are used for informational retrieval only. Any legal information shown remains subject to the accuracy limitations described above — always verify against the official Gazette of India / India Code and consult a qualified advocate.
+                  </p>
+                </div>
+              </section>
+
               {/* Final Notice */}
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mt-6">
                 <div className="flex items-start gap-3">

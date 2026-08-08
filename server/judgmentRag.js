@@ -1,9 +1,10 @@
-// Judgment RAG — Phase 2 (first slice). Retrieval over a bundled index of RECENT
-// Supreme Court of India judgment metadata (title + the legal issue + citation),
-// so the model can cite REAL precedents with proper citations instead of inventing
-// them. Built from the CC-BY "indian-supreme-court-judgments" AWS Open Data set.
+// Judgment RAG — Phase 2. Retrieval over a bundled index of Supreme Court of India
+// judgment metadata (title + the legal issue + citation) across ALL years
+// (1950–present), so the model can cite REAL precedents with proper citations
+// instead of inventing them. Built from the CC-BY "indian-supreme-court-judgments"
+// AWS Open Data set.
 //
-// This is a bounded in-memory index (recent SC only). Full-scale judgment RAG
+// This is a bounded in-memory index (SC metadata only). Full-scale judgment RAG
 // (all High Courts, full judgment text, millions of docs) needs a real vector DB
 // and is intentionally NOT loaded here.
 import fs from 'fs';
