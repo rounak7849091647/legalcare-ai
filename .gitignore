@@ -31,3 +31,8 @@ legal-rights-docs/
 *.njsproj
 *.sln
 *.sw?
+
+# Tier 2 large indexes (hosted in S3, not git)
+server/data/state-fulltext-index.json
+server/data/state-fulltext.db
+server/data/state-fulltext.db-*

@@ -1,7 +1,7 @@
-// State-law FULL-TEXT RAG (Tier 2) — retrieval over the actual section text of
-// state acts, extracted from the official India Code PDFs (no OCR; native text).
-// Currently seeded with a first state (Maharashtra) as an in-memory proof; the
-// full 36-state corpus (~3.7 GB) needs a dedicated vector DB / larger host.
+// State-law FULL-TEXT RAG (Tier 2) — DISK-BASED. Vectors + section text live in a
+// sqlite-vec database on disk (state-fulltext.db); we search it per query and read
+// only the winning rows. This keeps server RAM low, so the full 36-state corpus can
+// scale without loading gigabytes into memory. Native text from India Code PDFs.
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,21 +10,31 @@ import { ensureIndexFile } from './s3Index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-let INDEX = null;
+let DB = null;
+let searchStmt = null;
 
 export async function loadStateFullTextIndex() {
   try {
-    const p = await ensureIndexFile('state-fulltext-index.json');
-    if (!fs.existsSync(p)) { console.warn('[rag] state full-text index not present'); INDEX = null; return; }
-    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-    const buf = Buffer.from(raw.vectors_b64, 'base64');
-    const vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-    INDEX = { dims: raw.dims, count: raw.count, meta: raw.meta, vectors };
-    const states = [...new Set(raw.meta.map(m => m.state))];
-    console.log(`[rag] state full-text index loaded: ${raw.count} chunks (${states.join(', ')})`);
+    const p = await ensureIndexFile('state-fulltext.db');
+    if (!fs.existsSync(p)) { console.warn('[rag] state full-text DB not present'); DB = null; return; }
+    const Database = (await import('better-sqlite3')).default;
+    const sqliteVec = await import('sqlite-vec');
+    DB = new Database(p, { readonly: true, fileMustExist: true });
+    sqliteVec.load(DB);
+    DB.pragma('cache_size = -20000'); // cap page cache at ~20 MB — keep RAM low
+    DB.pragma('mmap_size = 268435456'); // 256 MB mmap window for fast reads
+    // Nearest-neighbour over vec0, joined to the section text in meta.
+    searchStmt = DB.prepare(`
+      select m.state, m.title, m.act_no, m.year, m.text, v.distance
+      from vec v join meta m on m.rowid = v.rowid
+      where v.embedding match ? and k = ?
+      order by v.distance`);
+    const { c } = DB.prepare('select count(*) c from meta').get();
+    const states = DB.prepare('select distinct state from meta').all().map(r => r.state);
+    console.log(`[rag] state full-text DB loaded (disk): ${c} chunks (${states.join(', ')})`);
   } catch (e) {
-    console.warn('[rag] state full-text index unavailable:', e.message);
-    INDEX = null;
+    console.warn('[rag] state full-text DB unavailable:', e.message);
+    DB = null;
   }
 }
 
@@ -47,29 +57,15 @@ async function embedQuery(text) {
   return r.data[0].embedding;
 }
 
-function cosineTopK(qvec, k) {
-  const { dims, count, vectors, meta } = INDEX;
-  let qn = 0;
-  for (let i = 0; i < dims; i++) qn += qvec[i] * qvec[i];
-  qn = Math.sqrt(qn) || 1;
-  const scores = new Array(count);
-  for (let d = 0; d < count; d++) {
-    const off = d * dims;
-    let dot = 0, vn = 0;
-    for (let i = 0; i < dims; i++) { const v = vectors[off + i]; dot += qvec[i] * v; vn += v * v; }
-    scores[d] = [dot / ((Math.sqrt(vn) || 1) * qn), d];
-  }
-  scores.sort((a, b) => b[0] - a[0]);
-  return scores.slice(0, k).map(([s, d]) => ({ score: s, ...meta[d] }));
-}
-
-// Returns real section text of the most relevant state-act passages, or ''.
-export async function retrieveStateFullText(query, { k = 3, minScore = 0.42 } = {}) {
-  if (!INDEX || !query || !query.trim()) return '';
+// The vec table uses cosine distance (0 = identical, 1 = orthogonal), so
+// maxDistance 0.58 ~= cosine similarity >= 0.42. Keep it permissive; the model judges fit.
+export async function retrieveStateFullText(query, { k = 3, maxDistance = 0.58 } = {}) {
+  if (!DB || !searchStmt || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
     if (!qvec) return '';
-    const hits = cosineTopK(qvec, k).filter(h => h.score >= minScore);
+    const qbuf = Buffer.from(new Float32Array(qvec).buffer);
+    const hits = searchStmt.all(qbuf, k).filter(h => h.distance <= maxDistance);
     if (!hits.length) return '';
     return hits
       .map(h => `[${h.title}${h.year ? `, ${h.year}` : ''} — ${h.state}]\n${h.text}`)
@@ -80,4 +76,4 @@ export async function retrieveStateFullText(query, { k = 3, minScore = 0.42 } = 
   }
 }
 
-export function stateFullTextIndexReady() { return !!INDEX; }
+export function stateFullTextIndexReady() { return !!DB; }
