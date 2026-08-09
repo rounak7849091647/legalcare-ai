@@ -6,14 +6,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
+import { ensureIndexFile } from './s3Index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let INDEX = null;
 
-export function loadStateFullTextIndex() {
+export async function loadStateFullTextIndex() {
   try {
-    const p = path.join(__dirname, 'data', 'state-fulltext-index.json');
+    const p = await ensureIndexFile('state-fulltext-index.json');
+    if (!fs.existsSync(p)) { console.warn('[rag] state full-text index not present'); INDEX = null; return; }
     const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
     const buf = Buffer.from(raw.vectors_b64, 'base64');
     const vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
