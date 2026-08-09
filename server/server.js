@@ -1217,7 +1217,10 @@ app.post('/functions/v1/send-verification', async (req, res) => {
     expiresAt: Date.now() + OTP_TTL_MS,
   });
 
-  // Send via Nodemailer — fall back to console log if SMTP is not working
+  // Send via Nodemailer. The OTP is already stored above, so it always logs to
+  // the console as a fallback (admin can relay it during an SMTP outage). But we
+  // now report delivery failure to the client so the user isn't left on a dead-end
+  // "code sent" screen when no email actually went out.
   if (emailTransporter) {
     try {
       await emailTransporter.sendMail({
@@ -1227,22 +1230,18 @@ app.post('/functions/v1/send-verification', async (req, res) => {
         html: buildOTPEmailHTML(otp, email),
       });
       console.log(`[otp] ✅ Sent code to ${email}`);
+      return res.json({ ok: true });
     } catch (err) {
-      // Email failed — log OTP to console so admin can relay it manually during SMTP outage
       console.error(`[otp] ❌ Email send failed: ${err.message}`);
       console.warn(`[otp] 🔑 FALLBACK — OTP for ${email}: ${otp}  (expires in 15 min)`);
-      // Still return success so the UI doesn't show a confusing error.
-      // The OTP IS stored in memory and will validate fine — just not emailed.
+      return res.json({ ok: false, error: 'We could not send the verification email right now. Please try again in a moment.' });
     }
-  } else {
-    // Nodemailer not configured — log OTP for local dev / SMTP-down scenario
-    console.warn(`[otp] 🔑 Email not configured — OTP for ${email}: ${otp}  (expires in 15 min)`);
-    // In production without working SMTP: still store OTP, return success.
-    // Admin can see OTPs in server logs. This prevents users from being
-    // completely locked out while SMTP is being configured.
   }
 
-  res.json({ ok: true });
+  // Nodemailer not configured (or SMTP auth failed at startup) — OTP still logged
+  // for local dev / admin relay, but tell the client email is unavailable.
+  console.warn(`[otp] 🔑 Email not configured — OTP for ${email}: ${otp}  (expires in 15 min)`);
+  return res.json({ ok: false, error: 'Email verification is temporarily unavailable. Please try again shortly.' });
 });
 
 // POST /functions/v1/verify-otp  { email, otp }

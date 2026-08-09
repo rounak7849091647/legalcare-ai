@@ -240,20 +240,21 @@ const Auth = () => {
         }
 
       } else if (mode === 'signup') {
-        const { error, userId } = await signUp(email, password, fullName);
+        const { error, userId, emailError } = await signUp(email, password, fullName);
         if (error) {
           const msg = error.message;
           if (/already registered|already exists/i.test(msg)) setFormError('This email is already registered. Try signing in.');
           else setFormError(msg);
         } else {
-          // Show OTP screen
+          // Account created. Show OTP screen. If the verification email failed to
+          // send, tell the user and let them resend immediately (no cooldown).
           passwordForOTP.current = password;
           setOtpEmail(email);
           setOtpUserId(userId || '');
           setOtpCode('');
-          setOtpError('');
+          setOtpError(emailError ? 'We couldn’t send your code. Tap “Resend code” to try again.' : '');
           setOtpScreen(true);
-          setResendCooldown(60); // 60 s cooldown before first resend
+          setResendCooldown(emailError ? 0 : 60);
         }
 
       } else {

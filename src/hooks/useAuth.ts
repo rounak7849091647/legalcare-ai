@@ -108,18 +108,26 @@ export const useAuth = (): AuthHook => {
 
   // ── Sign Up ─────────────────────────────────────────────────────────────────
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
-    return new Promise<{ error: Error | null; userId?: string }>(resolve => {
+    return new Promise<{ error: Error | null; userId?: string; emailError?: string }>(resolve => {
       const attributes = [
         new CognitoUserAttribute({ Name: 'email', Value: email }),
         new CognitoUserAttribute({ Name: 'name',  Value: fullName }),
       ];
-      userPool.signUp(email, password, attributes, [], (err, result) => {
+      userPool.signUp(email, password, attributes, [], async (err, result) => {
         if (err) return resolve({ error: new Error(err.message) });
         const userId = result?.userSub;
-        // Send our custom OTP (Cognito email verification disabled in pool)
-        invokeFunction('send-verification', { body: { email, userId } }).catch(() => {});
+        // Send our custom OTP (Cognito email verification disabled in pool).
+        // Await it so we can tell the user if the email did not actually go out —
+        // the account is created either way, they just may need to resend.
+        let emailError: string | undefined;
+        try {
+          const { data } = await invokeFunction('send-verification', { body: { email, userId } });
+          if (data?.error) emailError = data.error as string;
+        } catch (e) {
+          emailError = (e as Error).message;
+        }
         notifyAdmin('signup', fullName, email);
-        resolve({ error: null, userId });
+        resolve({ error: null, userId, emailError });
       });
     });
   }, []);
