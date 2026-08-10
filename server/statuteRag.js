@@ -10,10 +10,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
+import { buildMemoryFts, rrfMerge } from './hybrid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let INDEX = null; // { dims, count, meta:[], vectors:Float32Array }
+let FTS = null;   // keyword index (BM25) for hybrid retrieval
 
 export function loadStatuteIndex() {
   try {
@@ -22,7 +24,8 @@ export function loadStatuteIndex() {
     const buf = Buffer.from(raw.vectors_b64, 'base64');
     const vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
     INDEX = { dims: raw.dims, count: raw.count, meta: raw.meta, vectors };
-    console.log(`[rag] statute index loaded: ${raw.count} sections (${raw.dims}d)`);
+    FTS = buildMemoryFts(raw.meta, m => `${m.act} ${m.section} ${m.heading} ${m.text}`);
+    console.log(`[rag] statute index loaded: ${raw.count} sections (${raw.dims}d) + keyword index`);
   } catch (e) {
     console.warn('[rag] statute index unavailable:', e.message);
     INDEX = null;
@@ -50,8 +53,10 @@ async function embedQuery(text) {
   return r.data[0].embedding;
 }
 
-function cosineTopK(qvec, k) {
-  const { dims, count, vectors, meta } = INDEX;
+// Vector scores for the top-n sections: returns [{ d, score }] sorted best-first,
+// plus a Map d->score for the ones returned.
+function cosineTopIds(qvec, n) {
+  const { dims, count, vectors } = INDEX;
   let qn = 0;
   for (let i = 0; i < dims; i++) qn += qvec[i] * qvec[i];
   qn = Math.sqrt(qn) || 1;
@@ -63,20 +68,29 @@ function cosineTopK(qvec, k) {
     scores[d] = [dot / ((Math.sqrt(vn) || 1) * qn), d];
   }
   scores.sort((a, b) => b[0] - a[0]);
-  return scores.slice(0, k).map(([s, d]) => ({ score: s, ...meta[d] }));
+  return scores.slice(0, n).map(([s, d]) => ({ d, score: s }));
 }
 
-// Returns a formatted context block of the most relevant CURRENT statute sections,
-// or '' when nothing is confidently relevant. Never throws — chat must not break.
-export async function retrieveStatuteContext(query, { k = 6, minScore = 0.32 } = {}) {
+// Hybrid retrieval: fuse vector (semantic) and keyword (BM25) results via RRF, so
+// section numbers, act names and exact legal terms match literally while meaning
+// still matters. A kept hit must be at least weakly semantic (cosine >= floor) OR
+// a keyword hit, so off-topic queries still return ''. Never throws.
+export async function retrieveStatuteContext(query, { k = 6, floor = 0.24 } = {}) {
   if (!INDEX || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
     if (!qvec) return '';
-    const hits = cosineTopK(qvec, k).filter(h => h.score >= minScore);
-    if (!hits.length) return '';
-    return hits
-      .map(h => `[${h.act} — ${h.section}] ${h.heading}\n${h.text}`)
+    const vec = cosineTopIds(qvec, 15);
+    const vIds = vec.map(v => v.d);
+    const scoreMap = new Map(vec.map(v => [v.d, v.score]));
+    const kIds = FTS ? FTS.search(query, 15) : [];
+    const kSet = new Set(kIds);
+    const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]); // vector outranks keyword
+    const keep = fused.filter(d => (scoreMap.get(d) ?? 0) >= floor || kSet.has(d)).slice(0, k);
+    if (!keep.length) return '';
+    const meta = INDEX.meta;
+    return keep
+      .map(d => `[${meta[d].act} — ${meta[d].section}] ${meta[d].heading}\n${meta[d].text}`)
       .join('\n\n');
   } catch (e) {
     console.warn('[rag] retrieval failed:', e.message);

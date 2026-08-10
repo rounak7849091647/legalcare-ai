@@ -27,6 +27,7 @@ import { loadStatuteIndex, retrieveStatuteContext } from './statuteRag.js';
 import { loadJudgmentIndex, retrieveJudgmentContext } from './judgmentRag.js';
 import { loadStateLawIndex, retrieveStateLawContext } from './stateLawRag.js';
 import { loadStateFullTextIndex, retrieveStateFullText } from './stateFullTextRag.js';
+import { loadSubordinateIndex, retrieveSubordinate } from './subordinateRag.js';
 
 const dnsResolve = dns.promises;
 
@@ -922,14 +923,18 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     let ragBlock = '';
     try {
       // Retrieve statute text + real Supreme Court precedents in parallel.
-      const [statuteContext, judgmentContext, stateLawContext, stateFullText] = await Promise.all([
+      const [statuteContext, judgmentContext, stateLawContext, stateFullText, subordinateContext] = await Promise.all([
         retrieveStatuteContext(message),
         retrieveJudgmentContext(message),
         retrieveStateLawContext(message),
         retrieveStateFullText(message),
+        retrieveSubordinate(message),
       ]);
       if (stateFullText) {
         ragBlock += `\n\nRELEVANT STATE ACT TEXT (actual section text of a state act, retrieved for this question — treat as authoritative for that state, but still reply in the user's language):\n${stateFullText}`;
+      }
+      if (subordinateContext) {
+        ragBlock += `\n\nRELEVANT RULES / NOTIFICATIONS (subordinate legislation — rules, notifications, circulars made under an Act; use when the question is about procedure, forms, rates or details set by rules, and cite the rule/notification, but still reply in the user's language):\n${subordinateContext}`;
       }
       if (statuteContext) {
         ragBlock += `\n\nRELEVANT INDIAN STATUTE TEXT (retrieved for this question — treat as authoritative, quote the exact section number, but still reply in the user's language):\n${statuteContext}`;
@@ -1898,7 +1903,8 @@ app.get('/health', (req, res) => {
 loadStatuteIndex();  // bundled statute RAG index (~800 central acts + Constitution + criminal laws)
 loadJudgmentIndex(); // bundled judgment RAG index (Supreme Court precedents, all years)
 loadStateLawIndex(); // bundled state-law index (all 36 states/UTs, act metadata)
-loadStateFullTextIndex(); // Tier 2: full section text of state acts (seeded: Maharashtra)
+loadStateFullTextIndex(); // Tier 2: full section text of state acts (all 36 states, disk)
+loadSubordinateIndex();   // rules/notifications/circulars (disk; no-op until DB present)
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);

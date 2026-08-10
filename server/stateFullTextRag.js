@@ -7,11 +7,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
 import { ensureIndexFile } from './s3Index.js';
+import { ensureDbFts, rrfMerge } from './hybrid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let DB = null;
-let searchStmt = null;
+let vecStmt = null;   // nearest-neighbour rowids + distance
+let metaStmt = null;  // fetch a row by rowid
+let FTS = null;       // keyword (BM25) search over the same DB
 
 export async function loadStateFullTextIndex() {
   try {
@@ -19,19 +22,17 @@ export async function loadStateFullTextIndex() {
     if (!fs.existsSync(p)) { console.warn('[rag] state full-text DB not present'); DB = null; return; }
     const Database = (await import('better-sqlite3')).default;
     const sqliteVec = await import('sqlite-vec');
-    DB = new Database(p, { readonly: true, fileMustExist: true });
+    // Read-write so we can build the FTS keyword index into the (disposable) local copy.
+    DB = new Database(p, { fileMustExist: true });
     sqliteVec.load(DB);
-    DB.pragma('cache_size = -20000'); // cap page cache at ~20 MB — keep RAM low
-    DB.pragma('mmap_size = 268435456'); // 256 MB mmap window for fast reads
-    // Nearest-neighbour over vec0, joined to the section text in meta.
-    searchStmt = DB.prepare(`
-      select m.state, m.title, m.act_no, m.year, m.text, v.distance
-      from vec v join meta m on m.rowid = v.rowid
-      where v.embedding match ? and k = ?
-      order by v.distance`);
+    DB.pragma('cache_size = -40000'); // ~40 MB page cache
+    DB.pragma('mmap_size = 268435456'); // 256 MB mmap window
+    FTS = ensureDbFts(DB, { table: 'meta', cols: ['title', 'text'] });
+    vecStmt = DB.prepare('select rowid, distance from vec where embedding match ? and k = ? order by distance');
+    metaStmt = DB.prepare('select state, title, act_no, year, text from meta where rowid = ?');
     const { c } = DB.prepare('select count(*) c from meta').get();
-    const states = DB.prepare('select distinct state from meta').all().map(r => r.state);
-    console.log(`[rag] state full-text DB loaded (disk): ${c} chunks (${states.join(', ')})`);
+    const states = DB.prepare('select count(distinct state) c from meta').get().c;
+    console.log(`[rag] state full-text DB loaded (disk, hybrid): ${c} chunks, ${states} states`);
   } catch (e) {
     console.warn('[rag] state full-text DB unavailable:', e.message);
     DB = null;
@@ -57,18 +58,27 @@ async function embedQuery(text) {
   return r.data[0].embedding;
 }
 
-// The vec table uses cosine distance (0 = identical, 1 = orthogonal), so
-// maxDistance 0.58 ~= cosine similarity >= 0.42. Keep it permissive; the model judges fit.
-export async function retrieveStateFullText(query, { k = 3, maxDistance = 0.58 } = {}) {
-  if (!DB || !searchStmt || !query || !query.trim()) return '';
+// Hybrid retrieval: vec0 cosine (distance, 0=identical) fused with BM25 keyword
+// (matches state names, act titles, section numbers literally). A kept chunk needs
+// distance <= maxDistance OR to be a keyword hit. Vector outranks keyword.
+export async function retrieveStateFullText(query, { k = 3, maxDistance = 0.62 } = {}) {
+  if (!DB || !vecStmt || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
     if (!qvec) return '';
     const qbuf = Buffer.from(new Float32Array(qvec).buffer);
-    const hits = searchStmt.all(qbuf, k).filter(h => h.distance <= maxDistance);
-    if (!hits.length) return '';
-    return hits
-      .map(h => `[${h.title}${h.year ? `, ${h.year}` : ''} — ${h.state}]\n${h.text}`)
+    const vrows = vecStmt.all(qbuf, 15); // {rowid, distance} nearest first
+    const distMap = new Map(vrows.map(r => [r.rowid, r.distance]));
+    const vIds = vrows.map(r => r.rowid);
+    const kIds = FTS ? FTS.search(query, 15) : [];
+    const kSet = new Set(kIds);
+    const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]);
+    const keep = fused
+      .filter(id => (distMap.has(id) && distMap.get(id) <= maxDistance) || kSet.has(id))
+      .slice(0, k);
+    if (!keep.length) return '';
+    return keep
+      .map(id => { const h = metaStmt.get(id); return `[${h.title}${h.year ? `, ${h.year}` : ''} — ${h.state}]\n${h.text}`; })
       .join('\n\n');
   } catch (e) {
     console.warn('[rag] state full-text retrieval failed:', e.message);

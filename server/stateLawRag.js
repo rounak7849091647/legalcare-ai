@@ -7,10 +7,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
+import { buildMemoryFts, rrfMerge } from './hybrid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let INDEX = null; // { dims, count, meta:[], vectors:Float32Array }
+let FTS = null;
 
 export function loadStateLawIndex() {
   try {
@@ -19,7 +21,8 @@ export function loadStateLawIndex() {
     const buf = Buffer.from(raw.vectors_b64, 'base64');
     const vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
     INDEX = { dims: raw.dims, count: raw.count, meta: raw.meta, vectors };
-    console.log(`[rag] state-law index loaded: ${raw.count} state acts (${raw.dims}d)`);
+    FTS = buildMemoryFts(raw.meta, m => `${m.state || ''} ${m.title || ''}`);
+    console.log(`[rag] state-law index loaded: ${raw.count} state acts (${raw.dims}d) + keyword index`);
   } catch (e) {
     console.warn('[rag] state-law index unavailable:', e.message);
     INDEX = null;
@@ -45,8 +48,8 @@ async function embedQuery(text) {
   return r.data[0].embedding;
 }
 
-function cosineTopK(qvec, k) {
-  const { dims, count, vectors, meta } = INDEX;
+function cosineTopIds(qvec, n) {
+  const { dims, count, vectors } = INDEX;
   let qn = 0;
   for (let i = 0; i < dims; i++) qn += qvec[i] * qvec[i];
   qn = Math.sqrt(qn) || 1;
@@ -58,21 +61,30 @@ function cosineTopK(qvec, k) {
     scores[d] = [dot / ((Math.sqrt(vn) || 1) * qn), d];
   }
   scores.sort((a, b) => b[0] - a[0]);
-  return scores.slice(0, k).map(([s, d]) => ({ score: s, ...meta[d] }));
+  return scores.slice(0, n).map(([s, d]) => ({ d, score: s }));
 }
 
-// Returns a formatted block of the most relevant STATE acts by title, or '' if none.
-// Threshold kept fairly high because this is title-only matching (no body text).
-export async function retrieveStateLawContext(query, { k = 4, minScore = 0.34 } = {}) {
+// Hybrid retrieval over STATE act titles. Keyword matching is especially valuable
+// here (state names + act titles are the whole payload), so it routes "Maharashtra
+// rent" to the right act. Vector outranks keyword; a hit needs cosine >= floor OR
+// to be a keyword hit.
+export async function retrieveStateLawContext(query, { k = 4, floor = 0.28 } = {}) {
   if (!INDEX || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
     if (!qvec) return '';
-    const hits = cosineTopK(qvec, k).filter(h => h.score >= minScore);
-    if (!hits.length) return '';
-    return hits
-      .map(h => {
-        // Avoid a duplicated year when the title already ends with it (e.g. "... Act, 1999").
+    const vec = cosineTopIds(qvec, 12);
+    const vIds = vec.map(v => v.d);
+    const scoreMap = new Map(vec.map(v => [v.d, v.score]));
+    const kIds = FTS ? FTS.search(query, 10) : [];
+    const kSet = new Set(kIds);
+    const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]);
+    const keep = fused.filter(d => (scoreMap.get(d) ?? 0) >= floor || kSet.has(d)).slice(0, k);
+    if (!keep.length) return '';
+    const meta = INDEX.meta;
+    return keep
+      .map(d => {
+        const h = meta[d];
         const showYear = h.year && !h.title.includes(h.year);
         return `${h.title}${showYear ? `, ${h.year}` : ''} — ${h.state}${h.act_no ? ` (Act No. ${h.act_no})` : ''}`;
       })
