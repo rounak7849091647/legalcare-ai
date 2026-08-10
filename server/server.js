@@ -1221,27 +1221,22 @@ app.post('/functions/v1/send-verification', async (req, res) => {
   // the console as a fallback (admin can relay it during an SMTP outage). But we
   // now report delivery failure to the client so the user isn't left on a dead-end
   // "code sent" screen when no email actually went out.
-  if (emailTransporter) {
-    try {
-      await emailTransporter.sendMail({
-        from: `"LegalCareAI" <${process.env.NOTIFY_FROM_EMAIL}>`,
-        to: email,
-        subject: `${otp} — your LegalCareAI verification code`,
-        html: buildOTPEmailHTML(otp, email),
-      });
-      console.log(`[otp] ✅ Sent code to ${email}`);
-      return res.json({ ok: true });
-    } catch (err) {
-      console.error(`[otp] ❌ Email send failed: ${err.message}`);
-      console.warn(`[otp] 🔑 FALLBACK — OTP for ${email}: ${otp}  (expires in 15 min)`);
-      return res.json({ ok: false, error: 'We could not send the verification email right now. Please try again in a moment.' });
-    }
+  try {
+    await sendEmailResilient({
+      from: `"LegalCareAI" <${process.env.NOTIFY_FROM_EMAIL}>`,
+      to: email,
+      subject: `${otp} — your LegalCareAI verification code`,
+      html: buildOTPEmailHTML(otp, email),
+    });
+    console.log(`[otp] ✅ Sent code to ${email}`);
+    return res.json({ ok: true });
+  } catch (err) {
+    // OTP is still stored + logged (admin relay / local dev), but tell the client
+    // so the user isn't stuck on a dead-end "code sent" screen.
+    console.error(`[otp] ❌ Email send failed: ${err.message}`);
+    console.warn(`[otp] 🔑 FALLBACK — OTP for ${email}: ${otp}  (expires in 15 min)`);
+    return res.json({ ok: false, error: 'We could not send the verification email right now. Please try again in a moment.' });
   }
-
-  // Nodemailer not configured (or SMTP auth failed at startup) — OTP still logged
-  // for local dev / admin relay, but tell the client email is unavailable.
-  console.warn(`[otp] 🔑 Email not configured — OTP for ${email}: ${otp}  (expires in 15 min)`);
-  return res.json({ ok: false, error: 'Email verification is temporarily unavailable. Please try again shortly.' });
 });
 
 // POST /functions/v1/verify-otp  { email, otp }
@@ -1417,31 +1412,51 @@ const detectSMTPConfig = (email) => {
   return { host: 'smtp.gmail.com', port: 587, secure: false };
 };
 
-let emailTransporter = null;
-if (process.env.NOTIFY_FROM_EMAIL && process.env.NOTIFY_FROM_PASS) {
+// Build (or rebuild) the SMTP transporter. Called at startup and again to
+// self-heal after a send failure. We NEVER permanently disable email on a
+// transient blip — that previously left email dead until the next redeploy,
+// which is why OTPs "stopped working after a few days" (an EB restart at a bad
+// moment would trip the old verify() and null the transporter for good).
+function buildTransporter() {
+  if (!process.env.NOTIFY_FROM_EMAIL || !process.env.NOTIFY_FROM_PASS) return null;
   const smtpConfig = detectSMTPConfig(process.env.NOTIFY_FROM_EMAIL);
-  emailTransporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host: smtpConfig.host,
     port: smtpConfig.port,
     secure: smtpConfig.secure,
-    auth: {
-      user: process.env.NOTIFY_FROM_EMAIL,
-      pass: process.env.NOTIFY_FROM_PASS,
-    },
+    auth: { user: process.env.NOTIFY_FROM_EMAIL, pass: process.env.NOTIFY_FROM_PASS },
     tls: { rejectUnauthorized: false }, // tolerate self-signed certs on shared hosting
+    pool: true, maxConnections: 3, maxMessages: 100,
   });
+}
+
+let emailTransporter = buildTransporter();
+if (emailTransporter) {
+  // Startup check is advisory ONLY — a transient failure must not disable email,
+  // because sending is attempted (and self-heals) on every request below.
   emailTransporter.verify((err) => {
-    if (err) {
-      console.warn('[email] ⚠️  SMTP auth failed — email disabled. OTPs will be logged to console.');
-      console.warn('[email] Fix: Go to Hostinger hPanel → Emails → Email Accounts → change password for', process.env.NOTIFY_FROM_EMAIL);
-      console.warn('[email] Error detail:', err.message);
-      emailTransporter = null; // disable so we fallback cleanly
-    } else {
-      console.log(`[email] ✅ Transporter ready (${smtpConfig.host}) → ${ADMIN_NOTIFY_EMAIL}`);
-    }
+    if (err) console.warn('[email] ⚠️  startup SMTP check failed (will still try per-send):', err.message);
+    else console.log('[email] ✅ Transporter ready →', ADMIN_NOTIFY_EMAIL);
   });
 } else {
-  console.warn('[email] NOTIFY_FROM_EMAIL / NOTIFY_FROM_PASS not set — auth notifications disabled.');
+  console.warn('[email] NOTIFY_FROM_EMAIL / NOTIFY_FROM_PASS not set — email disabled.');
+}
+
+// Resilient send: try once; on failure, rebuild the transporter and retry once.
+// Handles stale pooled connections, momentary auth hiccups, and Hostinger blips
+// without staying broken until a redeploy.
+async function sendEmailResilient(mailOptions) {
+  if (!emailTransporter) emailTransporter = buildTransporter();
+  if (!emailTransporter) throw new Error('email not configured');
+  try {
+    return await emailTransporter.sendMail(mailOptions);
+  } catch (err) {
+    console.warn('[email] send failed, rebuilding transporter and retrying once:', err.message);
+    try { emailTransporter.close?.(); } catch { /* ignore */ }
+    emailTransporter = buildTransporter();
+    if (!emailTransporter) throw err;
+    return await emailTransporter.sendMail(mailOptions);
+  }
 }
 
 const buildNotifyHTML = ({ event, name, email, timestamp, userAgent }) => {
@@ -1491,8 +1506,6 @@ app.post('/functions/v1/auth-notify', async (req, res) => {
   // Always return 200 so a notification failure never blocks login.
   res.json({ ok: true });
 
-  if (!emailTransporter) return;
-
   const { event, name, email, timestamp, userAgent } = req.body || {};
   if (!email) return;
 
@@ -1501,7 +1514,7 @@ app.post('/functions/v1/auth-notify', async (req, res) => {
     : `🔐 Login: ${name || email} — LegalCareAI`;
 
   try {
-    await emailTransporter.sendMail({
+    await sendEmailResilient({
       from: `"LegalCareAI Alerts" <${process.env.NOTIFY_FROM_EMAIL}>`,
       to: ADMIN_NOTIFY_EMAIL,
       subject,
