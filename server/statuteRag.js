@@ -68,7 +68,7 @@ function cosineTopK(qvec, k) {
 
 // Returns a formatted context block of the most relevant CURRENT statute sections,
 // or '' when nothing is confidently relevant. Never throws — chat must not break.
-export async function retrieveStatuteContext(query, { k = 4, minScore = 0.32 } = {}) {
+export async function retrieveStatuteContext(query, { k = 6, minScore = 0.32 } = {}) {
   if (!INDEX || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
