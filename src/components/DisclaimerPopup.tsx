@@ -315,7 +315,11 @@ const DisclaimerPopup = () => {
                     <li>Bharatiya Nyaya Sanhita, Bharatiya Nagarik Suraksha Sanhita & Bharatiya Sakshya Adhiniyam, 2023 — dataset "indian-legal-sections-bns-bnss-bsa-2023" (Hugging Face, GSMS-B), licensed Apache-2.0.</li>
                     <li>Constitution of India — civictech-India "constitution-of-india" open dataset.</li>
                     <li>Supreme Court of India judgments — "indian-supreme-court-judgments" open dataset (AWS Open Data Registry), licensed CC-BY-4.0.</li>
+                    <li>State &amp; Union Territory Acts (all 36 jurisdictions) — bare-act texts reproduced from the official India Code repository (indiacode.nic.in).</li>
                   </ul>
+                  <p className="font-medium text-foreground">
+                    Data currency: the statute text reflects sources up to approximately 2020 for most Central Acts, the 2023 criminal codes (BNS/BNSS/BSA), and State Acts as published on India Code. It may not reflect the most recent amendments, Finance Acts, or notifications. Do not rely on it for the current position on fast-changing matters such as tax rates, thresholds, penalties or deadlines — verify these against the official Gazette of India / India Code before acting.
+                  </p>
                   <p>
                     These sources are used for informational retrieval only. Any legal information shown remains subject to the accuracy limitations described above — always verify against the official Gazette of India / India Code and consult a qualified advocate.
                   </p>
