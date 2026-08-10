@@ -27,7 +27,11 @@ export async function ensureIndexFile(filename) {
   try {
     // Lazy import so environments without the SDK aren't affected.
     const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-    const s3 = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    // Derive the region from the EB bucket name (elasticbeanstalk-<region>-<acct>)
+    // so a wrong AWS_REGION on the instance can't cause a 301 endpoint redirect.
+    const m = /^[a-z]+-([a-z0-9-]+?-\d)-\d+$/.exec(bucket);
+    const region = (m && m[1]) || process.env.INDEX_S3_REGION || process.env.AWS_REGION || 'ap-south-1';
+    const s3 = new S3Client({ region });
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     fs.mkdirSync(DATA_DIR, { recursive: true });
     await new Promise((resolve, reject) => {
