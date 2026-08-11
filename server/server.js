@@ -926,6 +926,22 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     // exactly as before. The statute text is English; the LANGUAGE LOCK still forces
     // the reply into the user's selected language.
     let ragBlock = '';
+    const sources = []; // structured citations shown to the user under the answer
+    // Pull the header line(s) of the top retrieved block(s) as source labels.
+    const collect = (ctx, type, n = 2) => {
+      if (!ctx) return;
+      const blocks = ctx.split('\n\n');
+      for (const b of blocks.slice(0, n)) {
+        const first = b.split('\n')[0].trim();
+        // Blocks are "[Citation] Heading" (statute/state/rule) or a bare line (state-meta).
+        const m = first.match(/^\[([^\]]+)\]\s*(.*)$/);
+        let label = m ? (m[2] ? `${m[1].trim()} — ${m[2].trim()}` : m[1].trim()) : first;
+        label = label.trim();
+        if (label && label.length > 3 && !sources.some(s => s.label === label)) {
+          sources.push({ type, label: label.slice(0, 160) });
+        }
+      }
+    };
     try {
       // Retrieve statute text + real Supreme Court precedents in parallel.
       const [statuteContext, judgmentContext, stateLawContext, stateFullText, subordinateContext] = await Promise.all([
@@ -935,6 +951,11 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
         retrieveStateFullText(message),
         retrieveSubordinate(message),
       ]);
+      collect(statuteContext, 'Act / Section', 2);
+      collect(stateFullText, 'State Act', 1);
+      collect(subordinateContext, 'Rule / Notification', 1);
+      collect(judgmentContext, 'Supreme Court', 1);
+      collect(stateLawContext, 'State Act', 1);
       if (stateFullText) {
         ragBlock += `\n\nRELEVANT STATE ACT TEXT (actual section text of a state act, retrieved for this question — treat as authoritative for that state, but still reply in the user's language):\n${stateFullText}`;
       }
@@ -981,6 +1002,9 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
       res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders?.();
 
+      // Send the grounding sources first so the UI can show what the answer is based on.
+      if (sources.length) res.write(`data: ${JSON.stringify({ sources })}\n\n`);
+
       try {
         const completion = await grok.chat.completions.create({
           model: GROK_MODEL,
@@ -1018,7 +1042,7 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     });
 
     const aiText = completion.choices[0]?.message?.content || "I am unable to process that request at the moment.";
-    res.json({ response: aiText, language: detectedLanguage });
+    res.json({ response: aiText, language: detectedLanguage, sources });
   } catch (error) {
     console.error('legal-chat error:', error);
     res.status(500).json({ error: error.message });

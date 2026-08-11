@@ -66,6 +66,29 @@ const ChatMessages = ({ messages, isLoading }: ChatMessagesProps) => {
                   >
                     {message.content}
                   </ReactMarkdown>
+
+                  {message.sources && message.sources.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-border/60">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        Sources referenced
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {message.sources.map((s, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-start gap-1 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs text-foreground max-w-full"
+                            title={s.label}
+                          >
+                            <span className="font-semibold text-muted-foreground shrink-0">{s.type}:</span>
+                            <span className="truncate">{s.label}</span>
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-2">
+                        Grounded in the above sources. Always verify against the official Gazette / India Code before acting.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="leading-relaxed inline-block">{message.content}</p>

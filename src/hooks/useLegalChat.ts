@@ -1,6 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 import { getChatUrl, invokeFunction } from '@/lib/api';
 
+export interface LegalSource {
+  type: string;   // e.g. "Act / Section", "Rule / Notification", "Supreme Court"
+  label: string;  // e.g. "BHARATIYA NYAYA SANHITA, 2023 (BNS) — Section 103 Punishment for murder"
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -10,6 +15,7 @@ export interface Message {
   language?: string;
   isDocumentSummary?: boolean;
   showFeedback?: boolean;
+  sources?: LegalSource[];
 }
 
 interface LegalChatHook {
@@ -151,6 +157,7 @@ export const useLegalChat = (): LegalChatHook => {
         throw new Error(`HTTP ${resp.status}: ${errorBody || resp.statusText}`);
       }
 
+      let assistantSources: LegalSource[] = [];
       const appendToAssistant = (text: string) => {
         setMessages(prev => {
           const newMessages = [...prev];
@@ -158,6 +165,7 @@ export const useLegalChat = (): LegalChatHook => {
           if (lastMsg && lastMsg.id === assistantId) {
             lastMsg.content = text;
             lastMsg.voiceContent = text;
+            if (assistantSources.length) lastMsg.sources = assistantSources;
           } else {
             newMessages.push({
               id: assistantId,
@@ -165,7 +173,8 @@ export const useLegalChat = (): LegalChatHook => {
               content: text,
               voiceContent: text,
               timestamp: new Date(),
-              language: detectedLanguage
+              language: detectedLanguage,
+              sources: assistantSources.length ? assistantSources : undefined,
             });
           }
           return newMessages;
@@ -196,7 +205,9 @@ export const useLegalChat = (): LegalChatHook => {
             if (payload === '[DONE]') continue;
             try {
               const parsed = JSON.parse(payload);
-              if (parsed.delta) {
+              if (parsed.sources) {
+                assistantSources = parsed.sources;
+              } else if (parsed.delta) {
                 fullResponse += parsed.delta;
                 appendToAssistant(fullResponse);
               } else if (parsed.error) {
@@ -209,6 +220,7 @@ export const useLegalChat = (): LegalChatHook => {
         }
       } else if (contentType.includes('application/json')) {
         const json = await resp.json();
+        if (Array.isArray(json.sources)) assistantSources = json.sources;
         fullResponse = json.response || json.answer || json.message || 'No response received.';
         appendToAssistant(fullResponse);
       } else {
