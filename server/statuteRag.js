@@ -90,7 +90,12 @@ export async function retrieveStatuteContext(query, { k = 6, floor = 0.24 } = {}
     if (!keep.length) return '';
     const meta = INDEX.meta;
     return keep
-      .map(d => `[${meta[d].act} — ${meta[d].section}] ${meta[d].heading}\n${meta[d].text}`)
+      .map(d => {
+        const m = meta[d];
+        const cite = m.section ? `${m.act} — ${m.section}` : m.act;
+        const head = m.heading ? ` ${m.heading}` : '';
+        return `[${cite}]${head}\n${m.text}`;
+      })
       .join('\n\n');
   } catch (e) {
     console.warn('[rag] retrieval failed:', e.message);
