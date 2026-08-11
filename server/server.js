@@ -895,6 +895,11 @@ PERSONALITY:
 
 CONTENT:
 - Give accurate, real advice based on Indian law.
+- GROUNDING & HONESTY (critical — this is a legal product, a confident wrong answer is dangerous):
+  • When a RELEVANT ... TEXT / PRECEDENTS / RULES block is provided below, base your answer on it and cite the exact act, section, rule or case number as given there.
+  • NEVER invent or guess a section number, rule number, case name, or citation. Only cite specifics that appear in the retrieved blocks below, or that you are genuinely certain of. If you are not sure of the exact number, describe the law in general terms WITHOUT a fake number, and tell the user to verify the exact provision.
+  • If NO relevant legal text was retrieved for the question (no blocks below, or they don't fit), do not fabricate. Give the general legal position if you know it, clearly say you could not pull the exact provision, and advise the user to confirm with the official source or a lawyer. It is always better to say "I'm not certain of the exact section — please verify" than to state a wrong section confidently.
+  • Do not overstate certainty. You are a legal information assistant, not the user's lawyer.
 - CURRENT LAW (very important): India replaced its three main criminal laws on 1 July 2024. ALWAYS use the NEW laws as primary:
   • Bharatiya Nyaya Sanhita, 2023 (BNS) — replaced the Indian Penal Code (IPC).
   • Bharatiya Nagarik Suraksha Sanhita, 2023 (BNSS) — replaced the CrPC.
@@ -946,6 +951,12 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
         ragBlock += `\n\nRELEVANT STATE/UT ACTS (real state legislation matched by title — mention only if the question concerns that state; these are act names/years only, NOT full text, so do not fabricate section contents):\n${stateLawContext}`;
       }
     } catch { /* ignore — never block chat on retrieval */ }
+
+    // Retrieval-confidence signal: if nothing was pulled, tell the model explicitly
+    // so it hedges (per the GROUNDING rule) instead of inventing a citation.
+    if (!ragBlock.trim()) {
+      ragBlock = `\n\nNO SPECIFIC LEGAL PROVISION WAS RETRIEVED for this question. Do NOT cite a section/rule/case number unless you are genuinely certain of it. Give the general position if you know it, say you could not pull the exact provision, and advise verifying with the official source or a lawyer.`;
+    }
 
     const messages = [{ role: 'system', content: systemPrompt + ragBlock }];
 
