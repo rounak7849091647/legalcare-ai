@@ -36,3 +36,6 @@ legal-rights-docs/
 server/data/state-fulltext-index.json
 server/data/state-fulltext.db
 server/data/state-fulltext.db-*
+
+# eval run output
+server/eval/last-report.json
