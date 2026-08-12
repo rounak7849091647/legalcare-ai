@@ -60,11 +60,15 @@ app.options('*', cors());
 // Increase limit for audio files
 app.use(express.json({ limit: '50mb' }));
 
-// Initialize Grok (xAI) — OpenAI-compatible API
+// LLM provider — OpenAI-compatible. Defaults to Grok (xAI), but is fully swappable
+// to any OpenAI-compatible endpoint (a self-hosted vLLM/Ollama/TGI server running
+// Llama/Qwen, etc.) by setting LLM_BASE_URL + LLM_API_KEY + LLM_MODEL. This is the
+// single switch to drop the Grok API for a self-hosted model — no other code change.
 const grok = new OpenAI({
-  apiKey: process.env.GROK_API_KEY || process.env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
+  apiKey: process.env.LLM_API_KEY || process.env.GROK_API_KEY || process.env.XAI_API_KEY || 'not-needed',
+  baseURL: process.env.LLM_BASE_URL || 'https://api.x.ai/v1',
 });
+console.log(`[llm] provider endpoint: ${process.env.LLM_BASE_URL || 'https://api.x.ai/v1 (Grok)'}`);
 
 // xAI doesn't expose STT yet, so Whisper (OpenAI) handles speech-to-text only.
 // All TTS goes through Google. Chat & courtroom remain 100% on Grok.
@@ -72,7 +76,7 @@ const whisperClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-const GROK_MODEL = process.env.GROK_MODEL || 'grok-4-fast-non-reasoning';
+const GROK_MODEL = process.env.LLM_MODEL || process.env.GROK_MODEL || 'grok-4-fast-non-reasoning';
 const GROK_STT_MODEL = process.env.GROK_STT_MODEL || 'whisper-1';
 
 // Hinglish is EXPLICITLY excluded — it must use the Hindi TTS voice, not the English one.
