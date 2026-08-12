@@ -85,7 +85,15 @@ export async function retrieveStatuteContext(query, { k = 6, floor = 0.24 } = {}
     const scoreMap = new Map(vec.map(v => [v.d, v.score]));
     const kIds = FTS ? FTS.search(query, 15) : [];
     const kSet = new Set(kIds);
-    const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]); // vector outranks keyword
+    let fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]); // vector outranks keyword
+    // Building bye-laws / development-control regulations are broad municipal text
+    // that hijacks non-building queries ("shops", "working hours"). Gate them out
+    // unless the question is actually about construction/building.
+    const isBuildingQ = /build|setback|\bfsi\b|floor area|\bfar\b|construction|plinth|parking|storey|storey|\bheight\b|balcony|basement|coverage|bye-?law|far\b/i.test(query);
+    if (!isBuildingQ) {
+      const meta0 = INDEX.meta;
+      fused = fused.filter(d => !/BUILDING BYE-LAWS|DEVELOPMENT CONTROL|\bDCPR\b|BUILDING RULES|MODEL BUILDING/i.test(meta0[d].act));
+    }
     const keep = fused.filter(d => (scoreMap.get(d) ?? 0) >= floor || kSet.has(d)).slice(0, k);
     if (!keep.length) return '';
     const meta = INDEX.meta;
