@@ -22,7 +22,23 @@ const SYNONYMS = [
   [/maintenance|alimony/i, 'maintenance of wife section 144 bhartiya nagarik suraksha hindu marriage act permanent alimony section 25 monthly allowance spouse'],
   [/pf|provident fund/i, 'employees provident fund contribution'],
   [/gratuity/i, 'payment of gratuity continuous service'],
+  [/\brti\b|right to information/i, 'right to information act request public information section 6 public information officer'],
 ];
+
+// Indian states/UTs, for routing state-specific queries to the right jurisdiction.
+export const STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa',
+  'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala',
+  'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland',
+  'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura',
+  'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Delhi', 'Jammu and Kashmir',
+  'Ladakh', 'Puducherry', 'Chandigarh',
+];
+// Return the state names mentioned in a query (lowercased).
+export function detectStates(q) {
+  const ql = (q || '').toLowerCase();
+  return STATES.filter(s => ql.includes(s.toLowerCase())).map(s => s.toLowerCase());
+}
 
 export function expandQuery(q) {
   let extra = '';

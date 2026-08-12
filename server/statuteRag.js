@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
-import { buildMemoryFts, rrfMerge } from './hybrid.js';
+import { buildMemoryFts, rrfMerge, STATES, detectStates } from './hybrid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -89,10 +89,19 @@ export async function retrieveStatuteContext(query, { k = 6, floor = 0.24 } = {}
     // Building bye-laws / development-control regulations are broad municipal text
     // that hijacks non-building queries ("shops", "working hours"). Gate them out
     // unless the question is actually about construction/building.
+    const meta0 = INDEX.meta;
     const isBuildingQ = /build|setback|\bfsi\b|floor area|\bfar\b|construction|plinth|parking|storey|storey|\bheight\b|balcony|basement|coverage|bye-?law|far\b/i.test(query);
     if (!isBuildingQ) {
-      const meta0 = INDEX.meta;
       fused = fused.filter(d => !/BUILDING BYE-LAWS|DEVELOPMENT CONTROL|\bDCPR\b|BUILDING RULES|MODEL BUILDING/i.test(meta0[d].act));
+    }
+    // State routing: if the query names a state, drop acts named after a DIFFERENT
+    // state (e.g. "Delhi Land Holdings Act" for a Tamil Nadu question).
+    const qStates = detectStates(query);
+    if (qStates.length) {
+      fused = fused.filter(d => {
+        const act = meta0[d].act.toLowerCase();
+        return !STATES.some(s => { const sl = s.toLowerCase(); return act.includes(sl) && !qStates.includes(sl); });
+      });
     }
     const keep = fused.filter(d => (scoreMap.get(d) ?? 0) >= floor || kSet.has(d)).slice(0, k);
     if (!keep.length) return '';

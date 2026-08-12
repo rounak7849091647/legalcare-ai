@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { OpenAI } from 'openai';
 import { ensureIndexFile } from './s3Index.js';
-import { ensureDbFts, rrfMerge } from './hybrid.js';
+import { ensureDbFts, rrfMerge, detectStates } from './hybrid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,9 +73,16 @@ export async function retrieveStateFullText(query, { k = 3, maxDistance = 0.62 }
     const kIds = FTS ? FTS.search(query, 15) : [];
     const kSet = new Set(kIds);
     const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]);
-    const keep = fused
-      .filter(id => (distMap.has(id) && distMap.get(id) <= maxDistance) || kSet.has(id))
-      .slice(0, k);
+    let cand = fused.filter(id => (distMap.has(id) && distMap.get(id) <= maxDistance) || kSet.has(id));
+    // If the query names a state, surface that state's chunks first.
+    const qStates = detectStates(query);
+    if (qStates.length) {
+      const rows = cand.map(id => ({ id, h: metaStmt.get(id) }));
+      const match = rows.filter(r => qStates.includes((r.h.state || '').toLowerCase()));
+      const rest = rows.filter(r => !qStates.includes((r.h.state || '').toLowerCase()));
+      cand = [...match, ...rest].map(r => r.id);
+    }
+    const keep = cand.slice(0, k);
     if (!keep.length) return '';
     return keep
       .map(id => { const h = metaStmt.get(id); return `[${h.title}${h.year ? `, ${h.year}` : ''} — ${h.state}]\n${h.text}`; })
