@@ -1,0 +1,19 @@
+# Cloudflare Workers config — static assets only.
+#
+# Without this file wrangler auto-detects the framework, sees Vite, and tries to
+# apply the Cloudflare Vite plugin, which requires Vite >= 6:
+#   "The version of Vite used in the project (5.4.21) cannot be automatically
+#    configured. Please update the Vite version to at least 6.0.0"
+#
+# This project doesn't need that plugin. `npm run build` emits a plain static
+# bundle to dist/ with no server-side code, so we declare the asset directory
+# explicitly and skip framework detection entirely.
+name = "legalcare-ai"
+compatibility_date = "2026-01-01"
+
+[assets]
+directory = "./dist"
+# React Router owns client-side routing, so unmatched paths must fall back to
+# index.html. Real files (home.html, /_next/*, /images/*) are still served
+# directly and take precedence over this fallback.
+not_found_handling = "single-page-application"
