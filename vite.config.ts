@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: 4000,
     cors: true,
+    // Bind the HMR socket to localhost explicitly. With host 0.0.0.0 the client
+    // otherwise guesses an address it cannot reach, HMR dies, and edits silently
+    // stop being applied — which looks like "my fix didn't work".
+    hmr: { host: "localhost", protocol: "ws", port: 4000 },
   },
   plugins: [react(), process.env.PREVIEW ? null : basicSsl()].filter(Boolean),
   resolve: {

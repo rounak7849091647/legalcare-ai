@@ -275,6 +275,17 @@ const AppSidebar = () => {
             </div>
           )}
 
+          {/* Home — opens the standalone marketing site (public/home.html, a static
+              Next.js export) in a NEW browser tab, outside the app shell. */}
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className="hover:bg-sidebar-accent">
+              <a href="/home.html" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">
+                <Home size={18} className="text-muted-foreground" />
+                {!isCollapsed && <span className="text-sm">Home</span>}
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+
           {user ? (
             <SidebarMenuItem>
               <SidebarMenuButton onClick={handleSignOut} className="hover:bg-destructive/10 hover:text-destructive">

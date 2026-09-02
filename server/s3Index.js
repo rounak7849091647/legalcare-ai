@@ -13,10 +13,29 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, 'data');
 
+// Extra directories to search before the bundled data dir, colon-separated:
+//   RAG_DATA_DIRS=/Volumes/Disk1/LegalCareAI-data:/mnt/legal
+// Lets multi-GB corpora live on an external disk instead of inside the repo.
+// Read lazily, NOT at module load: dotenv populates process.env in server.js
+// AFTER this module is imported, so a top-level read would always come back empty.
+function extraDirs() {
+  return (process.env.RAG_DATA_DIRS || '').split(':').map(s => s.trim()).filter(Boolean);
+}
+
+// All candidate locations for an index file, in priority order.
+export function candidatePaths(filename) {
+  return [...extraDirs().map(d => path.join(d, filename)), path.join(DATA_DIR, filename)];
+}
+
 // Returns the local path to `filename`, fetching it from S3 first when needed.
 export async function ensureIndexFile(filename) {
+  for (const p of candidatePaths(filename)) {
+    if (fs.existsSync(p) && fs.statSync(p).size > 0) {
+      if (!p.startsWith(DATA_DIR)) console.log(`[rag] using external index: ${p}`);
+      return p;
+    }
+  }
   const local = path.join(DATA_DIR, filename);
-  if (fs.existsSync(local) && fs.statSync(local).size > 0) return local;
 
   const bucket = process.env.INDEX_S3_BUCKET;
   if (!bucket) return local; // no S3 configured — caller handles the missing file

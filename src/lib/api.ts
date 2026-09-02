@@ -8,14 +8,20 @@ import { getFreshToken } from '@/lib/auth-token';
 
 // Base URL of the AWS/Express backend — no trailing slash.
 // Resolution order (first non-empty wins):
-//   1. window.__LEGALCARE_CONFIG__.apiUrl  ← runtime, edit /legalcare-config.js after deploy
-//   2. import.meta.env.VITE_API_URL        ← build-time
+//   1. import.meta.env.VITE_API_URL        ← build-time, but ONLY in dev (see below)
+//   2. window.__LEGALCARE_CONFIG__.apiUrl  ← runtime, edit /legalcare-config.js after deploy
+//   3. import.meta.env.VITE_API_URL        ← build-time
+// The dev-first rule matters: /legalcare-config.js ships a PRODUCTION api URL, and
+// because the runtime value wins it would otherwise hijack `npm run dev` and point
+// local work at the deployed backend. In a production build DEV is false, so the
+// runtime config keeps its normal priority.
 function resolveApiUrl(): string {
+  const buildTime = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (import.meta.env.DEV && buildTime) return buildTime.replace(/\/$/, '');
   if (typeof window !== 'undefined') {
     const runtime = window.__LEGALCARE_CONFIG__?.apiUrl?.trim();
     if (runtime) return runtime.replace(/\/$/, '');
   }
-  const buildTime = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   return (buildTime || 'http://localhost:8080').replace(/\/$/, '');
 }
 

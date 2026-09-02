@@ -6,18 +6,26 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { OpenAI } from 'openai';
 import { buildMemoryFts, rrfMerge } from './hybrid.js';
+import { embedQuery as localEmbedQuery } from './localEmbed.js';
+import { candidatePaths } from './s3Index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EMBED_DIMS = 384;
 
 let INDEX = null; // { dims, count, meta:[], vectors:Float32Array }
 let FTS = null;
 
 export function loadStateLawIndex() {
   try {
-    const p = path.join(__dirname, 'data', 'state-law-index.json');
+    // Search RAG_DATA_DIRS (external disk) first, then the bundled data dir.
+    const p = candidatePaths('state-law-index.json').find(c => fs.existsSync(c))
+      || path.join(__dirname, 'data', 'state-law-index.json');
     const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (raw.dims !== EMBED_DIMS) {
+      console.warn(`[rag] state-law index skipped: ${raw.dims}d != ${EMBED_DIMS}d (awaiting re-embed)`);
+      INDEX = null; FTS = null; return;
+    }
     const buf = Buffer.from(raw.vectors_b64, 'base64');
     const vectors = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
     INDEX = { dims: raw.dims, count: raw.count, meta: raw.meta, vectors };
@@ -29,24 +37,7 @@ export function loadStateLawIndex() {
   }
 }
 
-let _openai = null;
-function getOpenAI() {
-  if (_openai) return _openai;
-  if (!process.env.OPENAI_API_KEY) return null;
-  _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
-}
-
-async function embedQuery(text) {
-  const openai = getOpenAI();
-  if (!openai) return null;
-  const r = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text.slice(0, 2000),
-    dimensions: 512,
-  });
-  return r.data[0].embedding;
-}
+async function embedQuery(text) { return localEmbedQuery(text); }
 
 function cosineTopIds(qvec, n) {
   const { dims, count, vectors } = INDEX;
@@ -72,8 +63,8 @@ export async function retrieveStateLawContext(query, { k = 4, floor = 0.28 } = {
   if (!INDEX || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
-    if (!qvec) return '';
-    const vec = cosineTopIds(qvec, 12);
+    const vec = qvec ? cosineTopIds(qvec, 12) : []; // null qvec -> keyword-only
+
     const vIds = vec.map(v => v.d);
     const scoreMap = new Map(vec.map(v => [v.d, v.score]));
     const kIds = FTS ? FTS.search(query, 10) : [];

@@ -6,11 +6,12 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { OpenAI } from 'openai';
 import { ensureIndexFile } from './s3Index.js';
 import { ensureDbFts, rrfMerge } from './hybrid.js';
+import { embedQuery as localEmbedQuery } from './localEmbed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EMBED_DIMS = 384;
 
 let DB = null, vecStmt = null, metaStmt = null, FTS = null;
 
@@ -27,6 +28,8 @@ export async function loadSubordinateIndex() {
     FTS = ensureDbFts(DB, { table: 'meta', cols: ['title', 'text'] });
     vecStmt = DB.prepare('select rowid, distance from vec where embedding match ? and k = ? order by distance');
     metaStmt = DB.prepare('select title, type, jurisdiction, year, text from meta where rowid = ?');
+    try { vecStmt.all(Buffer.from(new Float32Array(EMBED_DIMS).buffer), 1); }
+    catch { console.warn(`[rag] subordinate-legislation DB skipped: not ${EMBED_DIMS}d (awaiting re-embed)`); DB = null; return; }
     const { c } = DB.prepare('select count(*) c from meta').get();
     console.log(`[rag] subordinate-legislation DB loaded (disk, hybrid): ${c} chunks`);
   } catch (e) {
@@ -35,30 +38,20 @@ export async function loadSubordinateIndex() {
   }
 }
 
-let _openai = null;
-function getOpenAI() {
-  if (_openai) return _openai;
-  if (!process.env.OPENAI_API_KEY) return null;
-  _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
-}
-async function embedQuery(text) {
-  const openai = getOpenAI();
-  if (!openai) return null;
-  const r = await openai.embeddings.create({ model: 'text-embedding-3-small', input: text.slice(0, 2000), dimensions: 512 });
-  return r.data[0].embedding;
-}
+async function embedQuery(text) { return localEmbedQuery(text); }
 
 // Returns relevant rules/notifications text, or ''. Hybrid vector + keyword.
 export async function retrieveSubordinate(query, { k = 3, maxDistance = 0.60 } = {}) {
   if (!DB || !vecStmt || !query || !query.trim()) return '';
   try {
     const qvec = await embedQuery(query);
-    if (!qvec) return '';
-    const qbuf = Buffer.from(new Float32Array(qvec).buffer);
-    const vrows = vecStmt.all(qbuf, 15);
-    const distMap = new Map(vrows.map(r => [r.rowid, r.distance]));
-    const vIds = vrows.map(r => r.rowid);
+    let distMap = new Map(), vIds = [];
+    if (qvec) { // null qvec -> keyword-only
+      const qbuf = Buffer.from(new Float32Array(qvec).buffer);
+      const vrows = vecStmt.all(qbuf, 15);
+      distMap = new Map(vrows.map(r => [r.rowid, r.distance]));
+      vIds = vrows.map(r => r.rowid);
+    }
     const kIds = FTS ? FTS.search(query, 15) : [];
     const kSet = new Set(kIds);
     const fused = rrfMerge([vIds, kIds], k * 2, 60, [2, 1]);

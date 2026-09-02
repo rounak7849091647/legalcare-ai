@@ -39,3 +39,24 @@ server/data/state-fulltext.db-*
 
 # eval run output
 server/eval/last-report.json
+.env.local
+
+# --- secrets (never commit) ---
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+
+# --- large generated indexes (exceed GitHub 100MB; rebuilt by scripts) ---
+server/data/*.json
+server/data/*.db
+server/data/*.db-*
+
+# --- bundled embedding model (downloaded at setup) ---
+server/models/
+
+# --- build output / archives ---
+dist*/
+*.zip
+node_modules/

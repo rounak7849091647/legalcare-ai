@@ -28,6 +28,9 @@ import { loadJudgmentIndex, retrieveJudgmentContext } from './judgmentRag.js';
 import { loadStateLawIndex, retrieveStateLawContext } from './stateLawRag.js';
 import { loadStateFullTextIndex, retrieveStateFullText } from './stateFullTextRag.js';
 import { loadSubordinateIndex, retrieveSubordinate } from './subordinateRag.js';
+import { loadCaseLawIndex, retrieveCaseLaw } from './caseLawRag.js';
+import { loadJudgmentTextIndex, retrieveJudgmentText } from './judgmentTextRag.js';
+import { warmEmbedder } from './localEmbed.js';
 
 const dnsResolve = dns.promises;
 
@@ -948,18 +951,22 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
     };
     try {
       // Retrieve statute text + real Supreme Court precedents in parallel.
-      const [statuteContext, judgmentContext, stateLawContext, stateFullText, subordinateContext] = await Promise.all([
+      const [statuteContext, judgmentContext, stateLawContext, stateFullText, subordinateContext, caseLawContext, judgmentTextContext] = await Promise.all([
         retrieveStatuteContext(message),
         retrieveJudgmentContext(message),
         retrieveStateLawContext(message),
         retrieveStateFullText(message),
         retrieveSubordinate(message),
+        retrieveCaseLaw(message),
+        retrieveJudgmentText(message),
       ]);
       collect(statuteContext, 'Act / Section', 2);
       collect(stateFullText, 'State Act', 1);
       collect(subordinateContext, 'Rule / Notification', 1);
       collect(judgmentContext, 'Supreme Court', 1);
       collect(stateLawContext, 'State Act', 1);
+      collect(caseLawContext, 'Case Law', 1);
+      collect(judgmentTextContext, 'Supreme Court', 1);
       if (stateFullText) {
         ragBlock += `\n\nRELEVANT STATE ACT TEXT (actual section text of a state act, retrieved for this question — treat as authoritative for that state, but still reply in the user's language):\n${stateFullText}`;
       }
@@ -974,6 +981,12 @@ Your ENTIRE response — every single sentence, including greetings, headers, ac
       }
       if (stateLawContext) {
         ragBlock += `\n\nRELEVANT STATE/UT ACTS (real state legislation matched by title — mention only if the question concerns that state; these are act names/years only, NOT full text, so do not fabricate section contents):\n${stateLawContext}`;
+      }
+      if (judgmentTextContext) {
+        ragBlock += `\n\nSUPREME COURT JUDGMENT TEXT (actual passages from real SC judgments retrieved for this question — you MAY quote or paraphrase the reasoning shown here and attribute it to the Court; do NOT state a holding that is not visible in the passage, and never invent a case name or citation):\n${judgmentTextContext}`;
+      }
+      if (caseLawContext) {
+        ragBlock += `\n\nRELEVANT COURT CASES (real High Court / Supreme Court judgments matched for this question — case title, court, date and judge are accurate; the snippet is a short extract, NOT the full holding. Cite these exactly as given and NEVER invent a case name, number or citation. Do not state a holding you cannot see in the extract):\n${caseLawContext}`;
       }
     } catch { /* ignore — never block chat on retrieval */ }
 
@@ -1944,6 +1957,9 @@ loadJudgmentIndex(); // bundled judgment RAG index (Supreme Court precedents, al
 loadStateLawIndex(); // bundled state-law index (all 36 states/UTs, act metadata)
 loadStateFullTextIndex(); // Tier 2: full section text of state acts (all 36 states, disk)
 loadSubordinateIndex();   // rules/notifications/circulars (disk; no-op until DB present)
+loadCaseLawIndex();       // High Court + Supreme Court citations (disk, keyword-only)
+loadJudgmentTextIndex();  // full text of SC judgments (disk, hybrid)
+warmEmbedder();           // load the local e5 query-embedding model at boot (self-hosted, no OpenAI)
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
