@@ -60,3 +60,8 @@ server/models/
 dist*/
 *.zip
 node_modules/
+
+# npm is the toolchain here; stray bun lockfiles make Cloudflare
+# pick bun and fail on --frozen-lockfile
+bun.lock
+bun.lockb
