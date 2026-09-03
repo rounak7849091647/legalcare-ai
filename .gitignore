@@ -65,3 +65,6 @@ node_modules/
 # pick bun and fail on --frozen-lockfile
 bun.lock
 bun.lockb
+
+# public build-time config (no secrets) — must be committed for CI builds
+!.env.production
