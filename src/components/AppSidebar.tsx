@@ -191,9 +191,18 @@ const AppSidebar = () => {
       <SidebarHeader className="p-2">
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
           {!isCollapsed && (
-            <Link to="/" className="flex flex-col pl-1">
-              <h1 className="text-lg font-semibold text-foreground tracking-tight">LegalCareAI</h1>
-              <p className="text-xs text-muted-foreground">Legal Intelligence</p>
+            <Link to="/" className="flex items-center gap-2 pl-1">
+              {/* The mark is a dark line-art knot on white, so it needs a light
+                  plate to stay visible in dark mode. */}
+              <img
+                src="/logo-mark.png"
+                alt="Legal Care AI"
+                className="h-9 w-9 shrink-0 rounded-md bg-white p-0.5 object-contain"
+              />
+              <span className="flex flex-col">
+                <h1 className="text-lg font-semibold text-foreground tracking-tight leading-tight">LegalCareAI</h1>
+                <p className="text-xs text-muted-foreground leading-tight">Legal Intelligence</p>
+              </span>
             </Link>
           )}
           <SidebarTrigger className={`text-muted-foreground hover:text-foreground ${isCollapsed ? 'h-8 w-8' : ''}`} />
