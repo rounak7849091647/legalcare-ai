@@ -1,10 +1,5 @@
 // Runtime API configuration.
-//
-// The production apiUrl below is currently a Cloudflare *quick tunnel* to the
-// backend running on a local machine. Quick-tunnel hostnames are regenerated
-// every time cloudflared restarts, so this value has to be updated whenever that
-// happens. Replace it with https://api.legalcareai.com once a named tunnel (or a
-// hosted backend) is in place. Edit the production url below after deploying;
+ Edit the production url below after deploying;
 // no rebuild is needed because this file is served as-is from /legalcare-config.js.
 //
 // When the page is opened from this machine (localhost) OR from another device on
@@ -23,6 +18,6 @@
   window.__LEGALCARE_CONFIG__ = {
     apiUrl: (isLoopback || isLan)
       ? window.location.protocol + '//' + h + ':8080'
-      : 'https://fitted-helen-jersey-judicial.trycloudflare.com'
+      : 'https://api.legalcareai.com'
   };
 })();
