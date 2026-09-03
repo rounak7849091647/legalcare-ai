@@ -192,12 +192,13 @@ const AppSidebar = () => {
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
           {!isCollapsed && (
             <Link to="/" className="flex items-center gap-2 pl-1">
-              {/* The mark is a dark line-art knot on white, so it needs a light
-                  plate to stay visible in dark mode. */}
+              {/* Transparent PNG, so no plate or border is needed. The mark is
+                  greyscale line art, so inverting it in dark mode keeps the same
+                  artwork legible against a dark sidebar. */}
               <img
                 src="/logo-mark.png"
                 alt="Legal Care AI"
-                className="h-9 w-9 shrink-0 rounded-md bg-white p-0.5 object-contain"
+                className="h-9 w-9 shrink-0 object-contain dark:invert"
               />
               <span className="flex flex-col">
                 <h1 className="text-lg font-semibold text-foreground tracking-tight leading-tight">LegalCareAI</h1>
