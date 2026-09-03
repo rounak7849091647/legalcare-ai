@@ -1,5 +1,4 @@
-// Runtime API configuration.
- Edit the production url below after deploying;
+// Runtime API configuration. Edit the production url below after deploying;
 // no rebuild is needed because this file is served as-is from /legalcare-config.js.
 //
 // When the page is opened from this machine (localhost) OR from another device on
