@@ -85,9 +85,18 @@ export function ensureDbFts(db, { table = 'meta', cols = ['title', 'text'] } = {
   const has = db.prepare("select count(*) c from sqlite_master where type='table' and name='meta_fts'").get().c;
   if (!has) {
     db.exec("create virtual table meta_fts using fts5(body, tokenize='porter unicode61')");
-    // Single SQL insert — no JS cursor, so no read/write conflict on the connection.
+  }
+  // Populate when empty — not merely when the table is missing. If a previous run
+  // created the table but died before the insert finished (e.g. the process was
+  // restarted mid-build), an existence check alone leaves it permanently empty and
+  // silently disables keyword search for that index.
+  const rows = db.prepare('select count(*) c from meta_fts').get().c;
+  const srcRows = db.prepare(`select count(*) c from ${table}`).get().c;
+  if (rows === 0 && srcRows > 0) {
     const body = cols.map(c => `coalesce(${c},'')`).join(" || ' ' || ");
+    // Single SQL insert — no JS cursor, so no read/write conflict on the connection.
     db.exec(`insert into meta_fts(rowid, body) select rowid, ${body} from ${table}`);
+    console.log(`[rag] built keyword index for ${table} (${srcRows} rows)`);
   }
   const stmt = db.prepare('select rowid from meta_fts where meta_fts match ? order by rank limit ?');
   return {
