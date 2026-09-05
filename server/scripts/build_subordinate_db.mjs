@@ -10,7 +10,10 @@ if (!outPath || !inputs.length) { console.error('usage: build_subordinate_db.mjs
 if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
 const db = new Database(outPath);
 sqliteVec.load(db);
-db.pragma('journal_mode = WAL');
+// DELETE, not WAL: the finished database gets moved into place as a single
+// file. In WAL mode the committed data lives partly in a sibling .db-wal, so
+// moving only the .db leaves a torn database that fails integrity_check.
+db.pragma('journal_mode = DELETE');
 
 let dims = null, rowid = 0, vStmt, mStmt;
 for (const file of inputs.sort()) {
